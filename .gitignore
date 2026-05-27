@@ -1,0 +1,23 @@
+# Node / Next
+node_modules/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+
+# Editor / OS
+*.log
+.DS_Store
+.vscode/
+.idea/
+.claude/
+
+# Backups (kept locally, not pushed)
+Revisions/
+
+# Live SQLite data — never push round data to a public repo
+data/*.db
+data/*.db-shm
+data/*.db-wal
