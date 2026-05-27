@@ -69,7 +69,19 @@ export function genCode(): string {
 }
 
 export function genToken(): string {
-  return crypto.randomUUID().replace(/-/g, "");
+  // crypto.randomUUID() requires a secure context (HTTPS or localhost).
+  // For deployments on plain HTTP we fall back to a Math.random-based UUIDv4 — fine
+  // for round/admin tokens since they're not security-critical (anyone with the
+  // link is already trusted by the round creator).
+  const uuid =
+    (typeof crypto !== "undefined" && typeof (crypto as any).randomUUID === "function")
+      ? (crypto as any).randomUUID()
+      : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+          const r = (Math.random() * 16) | 0;
+          const v = c === "x" ? r : (r & 0x3) | 0x8;
+          return v.toString(16);
+        });
+  return uuid.replace(/-/g, "");
 }
 
 export const PLAYER_COLORS = [
