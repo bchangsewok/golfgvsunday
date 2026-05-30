@@ -33,8 +33,20 @@ echo "═══ 5/6 · Start with PM2 ══════════════
 pm2 delete golfgv 2>/dev/null || true
 PORT=$APP_PORT pm2 start npm --name golfgv -- start
 pm2 save
-# Set pm2 to start on boot — uses the actual current user/home
-sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u "$RUN_USER" --hp "$HOME"
+
+# Install pm2 systemd service so the app starts at boot.
+# Some Ubuntu builds print a setup command instead of executing it; we capture
+# and run it ourselves to be reliable.
+PM2_BIN="$(which pm2)"
+SETUP_CMD=$(sudo env PATH=$PATH:/usr/bin "$PM2_BIN" startup systemd -u "$RUN_USER" --hp "$HOME" 2>&1 \
+  | grep -E '^sudo env' | tail -n 1)
+if [ -n "$SETUP_CMD" ]; then
+  echo "Running printed setup command: $SETUP_CMD"
+  eval "$SETUP_CMD"
+fi
+pm2 save
+sudo systemctl enable "pm2-${RUN_USER}" 2>/dev/null || true
+echo "pm2-${RUN_USER} systemd service: $(sudo systemctl is-enabled pm2-${RUN_USER} 2>/dev/null || echo unknown)"
 
 echo "═══ 6/6 · Firewall + port 80 forward ══════════════════════"
 sudo ufw allow OpenSSH || true
