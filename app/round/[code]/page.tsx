@@ -339,25 +339,33 @@ function ScoreboardVertical({ players, holes, scores, totals, currency, code, ad
     return { p, money, tc, strokes };
   });
 
+  // Column widths tuned to fit a small iPhone (≈ 390 px):
+  // meta cols ≈ 92 px + 4×60 = 332 ≈ 332 px → fits with margins.
   return (
-    <div className="card p-2 overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="text-white/40 text-xs">
+    <div className="card p-1 sm:p-2 overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+      <table className="w-full text-sm" style={{ tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: 36 }} />
+          <col style={{ width: 28 }} />
+          <col style={{ width: 28 }} />
+          {players.map((p: any) => <col key={p.id} />)}
+        </colgroup>
+        <thead className="text-white/40 text-[10px]">
           <tr className="border-b border-white/10">
-            <th className="py-1.5 px-2 text-left w-16">Hole</th>
-            <th className="py-1.5 px-2 text-center w-12">Par</th>
-            <th className="py-1.5 px-2 text-center w-12">×</th>
+            <th className="py-1 px-1 text-left">#</th>
+            <th className="py-1 px-0.5 text-center">P</th>
+            <th className="py-1 px-0.5 text-center">×</th>
             {players.map((p: any) => (
-              <th key={p.id} className="py-1.5 px-2 text-center min-w-[78px]">
-                <div className="flex flex-col items-center gap-1">
+              <th key={p.id} className="py-1 px-0.5 text-center">
+                <div className="flex flex-col items-center gap-0.5">
                   <Link
                     href={`/round/${code}/player/${p.id}${adminToken ? `?admin=${adminToken}` : ""}`}
-                    className="w-3 h-3 rounded-full hover:ring-2 hover:ring-white/30"
+                    className="w-2.5 h-2.5 rounded-full hover:ring-2 hover:ring-white/30"
                     style={{ background: p.color }}
                     title={`${p.name}'s detail`} />
                   <Link
                     href={`/round/${code}/score?player=${p.id}${adminToken ? `&admin=${adminToken}` : ""}`}
-                    className="text-white text-xs font-semibold hover:text-fairway-500"
+                    className="text-white text-[10px] font-semibold hover:text-fairway-500 truncate max-w-[60px] block"
                     title={`Update ${p.name}'s scores`}>
                     {p.name}
                   </Link>
@@ -369,9 +377,9 @@ function ScoreboardVertical({ players, holes, scores, totals, currency, code, ad
         <tbody>
           {sortedHoles.map((h: any) => (
             <tr key={h.id} className="border-b border-white/5">
-              <td className="py-1.5 px-2 text-white/80 font-mono">{h.number}</td>
-              <td className="py-1.5 px-2 text-center text-white/50">{h.par}</td>
-              <td className="py-1.5 px-2 text-center text-white/40">{h.multiplier > 1 ? `×${h.multiplier}` : "—"}</td>
+              <td className="py-1 px-1 text-white/80 font-mono text-xs">{h.number}</td>
+              <td className="py-1 px-0.5 text-center text-white/50 text-xs">{h.par}</td>
+              <td className="py-1 px-0.5 text-center text-white/40 text-xs">{h.multiplier > 1 ? h.multiplier : "·"}</td>
               {players.map((p: any) => {
                 const s = scores.find((x: any) => x.hole_id === h.id && x.player_id === p.id);
                 const ph = totals?.perHole.find((x: any) => x.holeId === h.id);
@@ -382,7 +390,7 @@ function ScoreboardVertical({ players, holes, scores, totals, currency, code, ad
                 const saoIn   = s?.sao_points || 0;
                 const olyHole = olyIn + olySpIn;
                 return (
-                  <td key={p.id} className="py-1 px-1 text-center align-top">
+                  <td key={p.id} className="py-1 px-0.5 text-center align-top">
                     <Link
                       href={`/round/${code}/score?player=${p.id}${adminToken ? `&admin=${adminToken}` : ""}`}
                       className="block hover:opacity-80 transition"
@@ -391,18 +399,18 @@ function ScoreboardVertical({ players, holes, scores, totals, currency, code, ad
                         ? <ScoreChip strokes={s.strokes} par={h.par} />
                         : <div className="text-white/30 text-sm py-1">—</div>}
                       {dgPts !== 0 && (
-                        <div className={`text-[9px] tabular-nums leading-tight ${dgPts > 0 ? "text-fairway-500" : "text-red-400"}`}
+                        <div className={`text-[9px] tabular-nums leading-none mt-0.5 ${dgPts > 0 ? "text-fairway-500" : "text-red-400"}`}
                              title={`DF ${fmt(dgPts)} pt = ${fmtM(dgMoney)} ${currency}`}>
-                          DF {fmt(dgPts)}
+                          {fmt(dgPts)}
                         </div>
                       )}
                       {olyHole !== 0 && (
-                        <div className={`text-[9px] tabular-nums leading-tight ${olyHole > 0 ? "text-sand-500" : "text-red-400"}`}>
-                          🏆{fmt(olyHole)}{olySpIn ? <sup className="text-[7px] opacity-70">·{olySpIn}</sup> : null}
+                        <div className={`text-[9px] tabular-nums leading-none ${olyHole > 0 ? "text-sand-500" : "text-red-400"}`}>
+                          🏆{fmt(olyHole)}
                         </div>
                       )}
                       {saoIn !== 0 && (
-                        <div className={`text-[9px] tabular-nums leading-tight ${saoIn > 0 ? "text-fuchsia-300" : "text-red-400"}`}>
+                        <div className={`text-[9px] tabular-nums leading-none ${saoIn > 0 ? "text-fuchsia-300" : "text-red-400"}`}>
                           ⚡{fmt(saoIn)}
                         </div>
                       )}
@@ -414,28 +422,28 @@ function ScoreboardVertical({ players, holes, scores, totals, currency, code, ad
           ))}
           {/* Totals row */}
           <tr className="border-t-2 border-white/15 font-bold bg-white/5">
-            <td className="py-2 px-2 text-white">Total</td>
-            <td className="py-2 px-2 text-center text-white/60">{totalPar}</td>
+            <td className="py-1.5 px-1 text-white text-xs">Tot</td>
+            <td className="py-1.5 px-0.5 text-center text-white/60 text-xs">{totalPar}</td>
             <td></td>
             {totalsRow.map(({ p, strokes }: any) => (
-              <td key={p.id + "-strokes"} className="py-2 px-1 text-center">
+              <td key={p.id + "-strokes"} className="py-1.5 px-0.5 text-center">
                 {strokes > 0 ? (
-                  <div className="text-white tabular-nums">
+                  <div className="text-white tabular-nums text-xs">
                     {strokes}
-                    <span className={`block text-[10px] ${strokes - totalPar > 0 ? "text-red-400" : strokes - totalPar < 0 ? "text-sky-300" : "text-white/50"}`}>
+                    <span className={`block text-[9px] leading-none ${strokes - totalPar > 0 ? "text-red-400" : strokes - totalPar < 0 ? "text-sky-300" : "text-white/50"}`}>
                       ({strokes - totalPar > 0 ? "+" : ""}{strokes - totalPar})
                     </span>
                   </div>
-                ) : <span className="text-white/30">—</span>}
+                ) : <span className="text-white/30 text-xs">—</span>}
               </td>
             ))}
           </tr>
           {/* Money row */}
           <tr className="border-b border-white/5">
-            <td className="py-1.5 px-2 text-white/80 text-xs">Money</td>
+            <td className="py-1 px-1 text-white/80 text-[10px]">$</td>
             <td colSpan={2}></td>
             {totalsRow.map(({ p, tc }: any) => (
-              <td key={p.id + "-money"} className={`py-1.5 px-1 text-center text-xs font-bold tabular-nums ${tc > 0 ? "text-fairway-500" : tc < 0 ? "text-red-400" : "text-white/60"}`}
+              <td key={p.id + "-money"} className={`py-1 px-0.5 text-center text-[10px] font-bold tabular-nums leading-tight ${tc > 0 ? "text-fairway-500" : tc < 0 ? "text-red-400" : "text-white/60"}`}
                   title={`Bet + food paid − fair share`}>
                 {tc > 0 ? "+" : ""}{tc.toFixed(0)}
               </td>
