@@ -21,12 +21,18 @@ export default function ScoreEntry({ params }: { params: { code: string } }) {
   const [newName, setNewName] = useState("");
   const [holeIdx, setHoleIdx] = useState(0);
 
-  // restore previous selection
+  // Restore previous selection OR honor ?player=ID query param (preferred — overrides saved).
   useEffect(() => {
     if (!round) return;
+    const queryPlayer = search.get("player");
+    if (queryPlayer && players.some(p => p.id === queryPlayer)) {
+      setMyPlayerId(queryPlayer);
+      localStorage.setItem(`gv:${round.code}:player`, queryPlayer);
+      return;
+    }
     const saved = localStorage.getItem(`gv:${round.code}:player`);
     if (saved && players.some(p => p.id === saved)) setMyPlayerId(saved);
-  }, [round, players]);
+  }, [round, players, search]);
 
   function pickSeat(id: string) {
     setMyPlayerId(id);

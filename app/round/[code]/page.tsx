@@ -6,7 +6,7 @@ import { useRound } from "@/lib/useRound";
 import { calculate } from "@/lib/scoring";
 import { api, safeCall } from "@/lib/api";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Crown, Users, Edit3, Settings, Share2, Trophy, Target, Flag, Swords, Zap, HelpCircle, Users2 } from "lucide-react";
+import { Copy, Crown, Users, Edit3, Settings, Share2, Trophy, Target, Flag, Swords, Zap, HelpCircle, Users2, LayoutGrid, Rows3 } from "lucide-react";
 import { termFor } from "@/lib/golfTerms";
 import Link from "next/link";
 
@@ -16,6 +16,12 @@ export default function RoundPage({ params }: { params: { code: string } }) {
   const adminToken = search.get("admin") || "";
   const { round, players, holes, scores, loading, err } = useRound(code);
   const [showQR, setShowQR] = useState(false);
+  const [layout, setLayout] = useState<"h" | "v">("h");
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem("gv:layout") : null;
+    if (saved === "v" || saved === "h") setLayout(saved);
+  }, []);
+  function setLayoutPersist(l: "h" | "v") { setLayout(l); try { localStorage.setItem("gv:layout", l); } catch {} }
 
   const totals = useMemo(() => {
     if (!round) return null;
@@ -105,7 +111,24 @@ export default function RoundPage({ params }: { params: { code: string } }) {
         <Stat label="Holes" value={`${countCompleteHoles(holes, players, scores)}/${holes.length}`} />
       </div>
 
-      <Scoreboard players={players} holes={holes} scores={scores} totals={totals!} currency={round.currency} olyStake={Number(round.olympic_stake ?? round.stake_per_point ?? 10)} code={code} adminToken={adminToken} />
+      <div className="flex items-center justify-end -mb-3">
+        <div className="bg-white/5 border border-white/10 rounded-lg p-0.5 flex gap-0.5">
+          <button onClick={() => setLayoutPersist("h")}
+            className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition ${layout === "h" ? "bg-fairway-500 text-white" : "text-white/60 hover:text-white"}`}
+            title="Horizontal — players in rows, holes in columns">
+            <LayoutGrid className="w-3 h-3" /> Horizontal
+          </button>
+          <button onClick={() => setLayoutPersist("v")}
+            className={`px-2 py-1 rounded text-xs flex items-center gap-1 transition ${layout === "v" ? "bg-fairway-500 text-white" : "text-white/60 hover:text-white"}`}
+            title="Vertical — holes in rows, players in columns">
+            <Rows3 className="w-3 h-3" /> Vertical
+          </button>
+        </div>
+      </div>
+      {layout === "h"
+        ? <Scoreboard players={players} holes={holes} scores={scores} totals={totals!} currency={round.currency} olyStake={Number(round.olympic_stake ?? round.stake_per_point ?? 10)} code={code} adminToken={adminToken} />
+        : <ScoreboardVertical players={players} holes={holes} scores={scores} totals={totals!} currency={round.currency} code={code} adminToken={adminToken} />
+      }
       <CategoryBreakdown players={players} totals={totals!} currency={round.currency} rawInputs={rawInputs} />
       <LeaderboardCards players={players} totals={totals!} currency={round.currency} />
       <MultiplierBar holes={holes} isAdmin={!!isAdmin} />
@@ -198,13 +221,19 @@ function Scoreboard({ players, holes, scores, totals, currency, olyStake, code, 
           return (
             <div key={p.id} className="grid gap-1 items-center py-2 border-t border-white/5"
                  style={{ gridTemplateColumns: COLS }}>
-              <Link
-                href={`/round/${code}/player/${p.id}${adminToken ? `?admin=${adminToken}` : ""}`}
-                className="flex items-center gap-2 truncate hover:text-fairway-500 transition"
-                title={`Open ${p.name}'s detail page`}>
-                <span className="w-3 h-3 rounded-full" style={{ background: p.color }} />
-                <span className="text-white text-sm font-medium truncate hover:text-fairway-500">{p.name}</span>
-              </Link>
+              <div className="flex items-center gap-2 truncate">
+                <Link
+                  href={`/round/${code}/player/${p.id}${adminToken ? `?admin=${adminToken}` : ""}`}
+                  className="w-3 h-3 rounded-full shrink-0 hover:ring-2 hover:ring-white/30"
+                  style={{ background: p.color }}
+                  title={`${p.name}'s detail page`} />
+                <Link
+                  href={`/round/${code}/score?player=${p.id}${adminToken ? `&admin=${adminToken}` : ""}`}
+                  className="text-white text-sm font-medium truncate hover:text-fairway-500"
+                  title={`Update ${p.name}'s scores`}>
+                  {p.name}
+                </Link>
+              </div>
               {sortedHoles.map((h: any) => {
                 const s = scores.find((x: any) => x.hole_id === h.id && x.player_id === p.id);
                 const ph = totals?.perHole.find((x: any) => x.holeId === h.id);
@@ -284,6 +313,136 @@ function Scoreboard({ players, holes, scores, totals, currency, olyStake, code, 
         });
         })()}
       </div>
+    </div>
+  );
+}
+
+// Vertical scoreboard: rows = holes, columns = players. Reads top-to-bottom like a classic scorecard.
+// Player headers link to score-entry pre-selected for that player; the colored dot links to detail.
+function ScoreboardVertical({ players, holes, scores, totals, currency, code, adminToken }: any) {
+  const sortedHoles = [...holes].sort((a: any, b: any) => a.number - b.number);
+  const foodPool  = players.reduce((s: number, x: any) => s + (Number(x.food_expenses) || 0), 0);
+  const foodShare = players.length > 0 ? foodPool / players.length : 0;
+  const fmt = (n: number) => `${n > 0 ? "+" : ""}${Number.isInteger(n) ? n : n.toFixed(1)}`;
+  const fmtM = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(0)}`;
+  const totalPar = sortedHoles.reduce((s: number, h: any) => s + h.par, 0);
+
+  // Pre-compute per-player totals
+  const totalsRow = players.map((p: any) => {
+    const money = totals?.money?.[p.id] || 0;
+    const food  = Number(p.food_expenses) || 0;
+    const tc    = money + food - foodShare;
+    const strokes = sortedHoles.reduce((sum: number, h: any) => {
+      const s = scores.find((x: any) => x.hole_id === h.id && x.player_id === p.id);
+      return sum + (s?.strokes || 0);
+    }, 0);
+    return { p, money, tc, strokes };
+  });
+
+  return (
+    <div className="card p-2 overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="text-white/40 text-xs">
+          <tr className="border-b border-white/10">
+            <th className="py-1.5 px-2 text-left w-16">Hole</th>
+            <th className="py-1.5 px-2 text-center w-12">Par</th>
+            <th className="py-1.5 px-2 text-center w-12">×</th>
+            {players.map((p: any) => (
+              <th key={p.id} className="py-1.5 px-2 text-center min-w-[78px]">
+                <div className="flex flex-col items-center gap-1">
+                  <Link
+                    href={`/round/${code}/player/${p.id}${adminToken ? `?admin=${adminToken}` : ""}`}
+                    className="w-3 h-3 rounded-full hover:ring-2 hover:ring-white/30"
+                    style={{ background: p.color }}
+                    title={`${p.name}'s detail`} />
+                  <Link
+                    href={`/round/${code}/score?player=${p.id}${adminToken ? `&admin=${adminToken}` : ""}`}
+                    className="text-white text-xs font-semibold hover:text-fairway-500"
+                    title={`Update ${p.name}'s scores`}>
+                    {p.name}
+                  </Link>
+                </div>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sortedHoles.map((h: any) => (
+            <tr key={h.id} className="border-b border-white/5">
+              <td className="py-1.5 px-2 text-white/80 font-mono">{h.number}</td>
+              <td className="py-1.5 px-2 text-center text-white/50">{h.par}</td>
+              <td className="py-1.5 px-2 text-center text-white/40">{h.multiplier > 1 ? `×${h.multiplier}` : "—"}</td>
+              {players.map((p: any) => {
+                const s = scores.find((x: any) => x.hole_id === h.id && x.player_id === p.id);
+                const ph = totals?.perHole.find((x: any) => x.holeId === h.id);
+                const dgPts   = ph?.dogFlightPoints?.[p.id] || 0;
+                const dgMoney = ph?.dogFlightMoney?.[p.id]  || 0;
+                const olyIn   = s?.olympic_points || 0;
+                const olySpIn = s?.olympic_special_points || 0;
+                const saoIn   = s?.sao_points || 0;
+                const olyHole = olyIn + olySpIn;
+                return (
+                  <td key={p.id} className="py-1 px-1 text-center align-top">
+                    <Link
+                      href={`/round/${code}/score?player=${p.id}${adminToken ? `&admin=${adminToken}` : ""}`}
+                      className="block hover:opacity-80 transition"
+                      title={`Update ${p.name} · hole ${h.number}`}>
+                      {s?.strokes != null
+                        ? <ScoreChip strokes={s.strokes} par={h.par} />
+                        : <div className="text-white/30 text-sm py-1">—</div>}
+                      {dgPts !== 0 && (
+                        <div className={`text-[9px] tabular-nums leading-tight ${dgPts > 0 ? "text-fairway-500" : "text-red-400"}`}
+                             title={`DF ${fmt(dgPts)} pt = ${fmtM(dgMoney)} ${currency}`}>
+                          DF {fmt(dgPts)}
+                        </div>
+                      )}
+                      {olyHole !== 0 && (
+                        <div className={`text-[9px] tabular-nums leading-tight ${olyHole > 0 ? "text-sand-500" : "text-red-400"}`}>
+                          🏆{fmt(olyHole)}{olySpIn ? <sup className="text-[7px] opacity-70">·{olySpIn}</sup> : null}
+                        </div>
+                      )}
+                      {saoIn !== 0 && (
+                        <div className={`text-[9px] tabular-nums leading-tight ${saoIn > 0 ? "text-fuchsia-300" : "text-red-400"}`}>
+                          ⚡{fmt(saoIn)}
+                        </div>
+                      )}
+                    </Link>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {/* Totals row */}
+          <tr className="border-t-2 border-white/15 font-bold bg-white/5">
+            <td className="py-2 px-2 text-white">Total</td>
+            <td className="py-2 px-2 text-center text-white/60">{totalPar}</td>
+            <td></td>
+            {totalsRow.map(({ p, strokes }: any) => (
+              <td key={p.id + "-strokes"} className="py-2 px-1 text-center">
+                {strokes > 0 ? (
+                  <div className="text-white tabular-nums">
+                    {strokes}
+                    <span className={`block text-[10px] ${strokes - totalPar > 0 ? "text-red-400" : strokes - totalPar < 0 ? "text-sky-300" : "text-white/50"}`}>
+                      ({strokes - totalPar > 0 ? "+" : ""}{strokes - totalPar})
+                    </span>
+                  </div>
+                ) : <span className="text-white/30">—</span>}
+              </td>
+            ))}
+          </tr>
+          {/* Money row */}
+          <tr className="border-b border-white/5">
+            <td className="py-1.5 px-2 text-white/80 text-xs">Money</td>
+            <td colSpan={2}></td>
+            {totalsRow.map(({ p, tc }: any) => (
+              <td key={p.id + "-money"} className={`py-1.5 px-1 text-center text-xs font-bold tabular-nums ${tc > 0 ? "text-fairway-500" : tc < 0 ? "text-red-400" : "text-white/60"}`}
+                  title={`Bet + food paid − fair share`}>
+                {tc > 0 ? "+" : ""}{tc.toFixed(0)}
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
