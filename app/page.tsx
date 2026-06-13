@@ -150,7 +150,7 @@ function RecentRoundsCard() {
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <code className="text-fairway-500 font-bold text-sm tracking-wider">{r.code}</code>
                   {isAdmin && <span className="chip bg-sand-500/20 text-sand-500 border border-sand-500/30 text-[10px]"><Crown className="w-3 h-3" />Admin</span>}
-                  {!isAdmin && r.player_id && (
+                  {!isAdmin && r.player_id && r.player_color && (
                     <span className="chip bg-fairway-500/20 text-fairway-500 border border-fairway-500/30 text-[10px]" style={{ background: `${r.player_color}30`, color: r.player_color, borderColor: `${r.player_color}60` }}>
                       {r.player_name}
                     </span>
