@@ -2,7 +2,26 @@
 import Constants from "expo-constants";
 import type { Round, Player, Hole, Score, Course, DeviceRound } from "./types";
 
-const API_BASE: string = (Constants.expoConfig?.extra as any)?.apiBase || "https://golfgv-bchangsewok.azurewebsites.net";
+// Resolve API base.
+//   1. explicit override via app.json `extra.apiBase`
+//   2. otherwise derive from Expo dev server host (so a real phone on the LAN
+//      hits the dev machine's IP, not its own localhost)
+//   3. fall back to the public Azure URL
+function resolveBase(): string {
+  const explicit = (Constants.expoConfig?.extra as any)?.apiBase as string | undefined;
+  if (explicit && !/localhost|127\.0\.0\.1/.test(explicit)) return explicit;
+
+  // `hostUri` looks like "192.168.1.12:8081" when Metro is running on the LAN.
+  const hostUri: string | undefined =
+    (Constants.expoConfig as any)?.hostUri ||
+    (Constants as any)?.expoGoConfig?.hostUri ||
+    (Constants.manifest2 as any)?.extra?.expoGo?.developer?.host;
+  const host = hostUri?.split(":")[0];
+  if (host && host !== "localhost" && host !== "127.0.0.1") return `http://${host}:3002`;
+
+  return explicit || "https://golfgv-bchangsewok.azurewebsites.net";
+}
+const API_BASE: string = resolveBase();
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {

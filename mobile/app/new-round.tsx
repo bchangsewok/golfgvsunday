@@ -28,7 +28,11 @@ export default function NewRound() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState<string | null>(null);
 
-  useEffect(() => { api.listCourses().then(setCourses).catch(() => {}); }, []);
+  useEffect(() => {
+    api.listCourses()
+      .then(setCourses)
+      .catch(e => setError(`Couldn't load courses: ${e?.message || e}. API: ${api.base}`));
+  }, []);
   const selectedCourse = useMemo(() => courses.find(c => c.id === courseId), [courses, courseId]);
   const isCustom = courseId === "custom";
 
