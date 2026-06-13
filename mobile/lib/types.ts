@@ -1,0 +1,69 @@
+// Mirror of web app types — copy-pasted to keep mobile decoupled.
+// If you change them on the web, update here too.
+
+export type Course = {
+  id: string; name: string; location: string | null;
+  hole_count: number; pars: number[]; total_par: number; is_seeded: boolean;
+};
+
+export type LocalRules = {
+  birdiePoints: number;  eaglePoints: number;  par3NearPinPoints: number;
+  dfBirdieMult: number;  dfEagleMult: number;  saoPoints: number;
+  enableDogFlight: boolean; enableOlympic: boolean; enableSao: boolean;
+};
+
+export type TeamPlaySettings = {
+  parPoints: number; birdiePoints: number; eaglePoints: number;
+  teamAName: string; teamBName: string; teamAColor: string; teamBColor: string;
+};
+
+export type RoundSettings = {
+  distanceBuckets?: Record<number, number[]>;
+  maxScoreOverPar?: Record<number, number>;
+  dogFlightMode?: "loser-pays-each" | "skins";
+  localRules?: Partial<LocalRules>;
+  teamPlay?: Partial<TeamPlaySettings>;
+};
+
+export type Round = {
+  id: string; code: string; name: string;
+  course_name: string | null; course_id: string | null;
+  hole_count: number; player_count: number;
+  stake_per_point: number; dog_flight_stake: number; olympic_stake: number;
+  currency: string; admin_token: string;
+  settings: RoundSettings;
+  status: "active" | "finished";
+  team_play_enabled: 0 | 1; team_play_stake: number;
+  created_at: string;
+};
+
+export type Player = {
+  id: string; round_id: string; name: string; seat: number;
+  color: string; handicap: number; player_token: string;
+  plays_dog_flight: 0 | 1; applies_multiplier: 0 | 1;
+  food_expenses: number; team: "A" | "B" | null;
+};
+
+export type Hole = {
+  id: string; round_id: string; number: number; par: number; multiplier: number;
+};
+
+export type Score = {
+  id: string; round_id: string; hole_id: string; player_id: string;
+  strokes: number | null;
+  on_green_distance_m: number | null;
+  olympic_points: number; olympic_special_points: number; sao_points: number;
+  updated_by: string | null; updated_at: string;
+};
+
+export type DeviceRound = {
+  id: string; device_id: string; device_label: string | null;
+  round_id: string; player_id: string | null;
+  is_admin: 0 | 1; admin_token: string | null;
+  first_seen: string; last_seen: string;
+  code: string; name: string; course_name: string | null;
+  status: "active" | "finished"; player_count: number;
+  dog_flight_stake: number; olympic_stake: number; currency: string;
+  created_at: string;
+  player_name: string | null; player_color: string | null;
+};
