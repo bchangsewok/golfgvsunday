@@ -35,8 +35,13 @@ export default function Home() {
             <View style={styles.ctaRow}>
               <Pressable
                 style={[styles.cta, { backgroundColor: colors.accent }]}
+                onPress={() => router.push("/new-round")}>
+                <Text style={[styles.ctaText, { color: colors.accentText, ...font }]}>＋  New round</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.cta, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}
                 onPress={() => router.push("/join")}>
-                <Text style={[styles.ctaText, { color: colors.accentText, ...font }]}>📷  Join a round</Text>
+                <Text style={[styles.ctaText, { color: colors.text, ...font }]}>📷  Join</Text>
               </Pressable>
             </View>
             {rounds.length > 0 && (

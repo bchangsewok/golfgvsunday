@@ -21,6 +21,19 @@ export const api = {
   base: API_BASE,
   listCourses: () => req<Course[]>("/api/courses"),
 
+  createRound: (body: {
+    code: string; name: string;
+    course_name: string; course_id: string | null;
+    hole_count: number; player_count: number;
+    dog_flight_stake: number; olympic_stake: number;
+    admin_token: string; pars: number[];
+    players: { seat: number; name: string; color: string; player_token: string }[];
+  }) => req<{ id: string; code: string; admin_token: string }>("/api/rounds", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }),
+
   getRound: (code: string) =>
     req<{ round: Round; players: Player[]; holes: Hole[]; scores: Score[] }>(
       `/api/rounds/${encodeURIComponent(code)}`
