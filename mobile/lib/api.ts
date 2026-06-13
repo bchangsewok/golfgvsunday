@@ -12,8 +12,12 @@ import type { Round, Player, Hole, Score, Course, DeviceRound, RoundSummary } fr
 //   4. fall back to the public Azure URL
 function resolveBase(): string {
   if (Platform.OS === "web" && typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (host) return `${window.location.protocol}//${host}:3002`;
+    const { protocol, hostname, port } = window.location;
+    // Expo Metro dev server runs on :8081 and the Next backend on :3002 —
+    // flip the port. In production (served from the Next app itself at /m/),
+    // the backend lives on the same origin, so keep the URL as-is.
+    if (port === "8081") return `${protocol}//${hostname}:3002`;
+    return `${protocol}//${hostname}${port ? `:${port}` : ""}`;
   }
 
   const explicit = (Constants.expoConfig?.extra as any)?.apiBase as string | undefined;
