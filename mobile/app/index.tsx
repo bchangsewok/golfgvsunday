@@ -49,7 +49,7 @@ export default function Home() {
                 {rounds.length > 0 ? "ON THIS PHONE" : ""}
               </Text>
               <Pressable onPress={() => router.push("/all-rounds")}>
-                <Text style={[styles.linkBtn, { color: colors.accent, ...font }]}>Browse all rounds ›</Text>
+                <Text style={[styles.linkBtn, { color: colors.accent, ...font }]}>👑 My rounds ›</Text>
               </Pressable>
             </View>
           </View>

@@ -2,13 +2,13 @@ import { useCallback, useState } from "react";
 import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, ActivityIndicator } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useTheme, spacing, radii, font } from "@/lib/theme";
-import { api } from "@/lib/api";
-import { trackRoundAccess } from "@/lib/device";
-import type { RoundSummary } from "@/lib/types";
+import { fetchDeviceRounds, getDeviceLabel } from "@/lib/device";
+import type { DeviceRound } from "@/lib/types";
 
-export default function AllRounds() {
+export default function MyRounds() {
   const { colors } = useTheme();
-  const [rounds, setRounds]       = useState<RoundSummary[]>([]);
+  const [rounds, setRounds]       = useState<DeviceRound[]>([]);
+  const [label, setLabel]         = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
@@ -17,8 +17,9 @@ export default function AllRounds() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const list = await api.listRounds(100);
-      setRounds(list);
+      setLabel(await getDeviceLabel());
+      const list = await fetchDeviceRounds();
+      setRounds(list.filter(r => r.is_admin === 1));   // only rounds I created
       setError(null);
     } catch (e: any) {
       setError(e?.message || "Failed to load rounds");
@@ -32,14 +33,24 @@ export default function AllRounds() {
 
   const filtered = rounds.filter(r => filter === "all" ? true : r.status === filter);
 
-  async function open(r: RoundSummary) {
-    // Register this device as a viewer for the round so it shows up under Recent
-    await trackRoundAccess({ round_id: r.id });
-    router.push({ pathname: "/round/[code]", params: { code: r.code } });
+  function open(r: DeviceRound) {
+    router.push({
+      pathname: "/round/[code]",
+      params: { code: r.code, admin: r.admin_token || "" }
+    });
   }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.headerText, { color: colors.text, ...font }]}>
+          👑 My rounds
+        </Text>
+        <Text style={[styles.headerSub, { color: colors.textDim, ...font }]}>
+          {rounds.length} created{label ? ` by ${label}` : ""}
+        </Text>
+      </View>
+
       <View style={[styles.filterRow, { borderBottomColor: colors.border }]}>
         {(["all", "active", "finished"] as const).map(k => {
           const active = filter === k;
@@ -53,6 +64,12 @@ export default function AllRounds() {
           );
         })}
       </View>
+
+      {!label && !loading && (
+        <Text style={[styles.tip, { color: colors.textMuted, ...font }]}>
+          Tip: name this device in Settings so rounds you create from other phones with the same name also appear here.
+        </Text>
+      )}
 
       {loading && (
         <View style={{ padding: spacing.lg, alignItems: "center" }}>
@@ -81,10 +98,13 @@ export default function AllRounds() {
             </View>
             <Text style={[styles.title, { color: colors.text, ...font }]} numberOfLines={1}>{item.name}</Text>
             <Text style={[styles.sub, { color: colors.textDim, ...font }]} numberOfLines={1}>
-              {item.course_name || "—"}  ·  {item.player_count}p  ·  {item.hole_count}h
+              {item.course_name || "—"}  ·  {item.player_count}p
             </Text>
             <Text style={[styles.meta, { color: colors.textMuted, ...font }]}>
-              {new Date(item.created_at + "Z").toLocaleString()}
+              {new Date(item.created_at + "Z").toLocaleDateString()}
+              {item.device_label && item.device_label !== label
+                ? `  ·  from ${item.device_label}`
+                : ""}
             </Text>
           </Pressable>
         )}
@@ -93,7 +113,7 @@ export default function AllRounds() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={load} tintColor={colors.accent} />}
         ListEmptyComponent={!loading ? (
           <Text style={[{ color: colors.textDim, textAlign: "center", marginTop: spacing.xl, ...font }]}>
-            No rounds yet.
+            {rounds.length === 0 ? "You haven't created any rounds yet." : "No rounds match your filter."}
           </Text>
         ) : null}
       />
@@ -102,14 +122,18 @@ export default function AllRounds() {
 }
 
 const styles = StyleSheet.create({
-  filterRow: { flexDirection: "row", gap: spacing.sm, padding: spacing.md, borderBottomWidth: 1 },
-  filterPill: { paddingVertical: spacing.xs, paddingHorizontal: spacing.md, borderRadius: 999, borderWidth: 1 },
-  card:    { borderRadius: radii.lg, borderWidth: 1, padding: spacing.md },
-  cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xs },
-  code:    { fontSize: 14, fontWeight: "800", letterSpacing: 2, fontVariant: ["tabular-nums"] },
-  status:  { fontSize: 12, fontWeight: "600" },
-  title:   { fontSize: 16, fontWeight: "600", marginBottom: 2 },
-  sub:     { fontSize: 13, marginBottom: 2 },
-  meta:    { fontSize: 11 },
-  error:   { textAlign: "center", padding: spacing.md, fontSize: 13 }
+  header:      { padding: spacing.md, borderBottomWidth: 1 },
+  headerText:  { fontSize: 20, fontWeight: "700" },
+  headerSub:   { fontSize: 13, marginTop: 2 },
+  filterRow:   { flexDirection: "row", gap: spacing.sm, padding: spacing.md, borderBottomWidth: 1 },
+  filterPill:  { paddingVertical: spacing.xs, paddingHorizontal: spacing.md, borderRadius: 999, borderWidth: 1 },
+  tip:         { fontSize: 12, padding: spacing.md, paddingBottom: 0, lineHeight: 17 },
+  card:        { borderRadius: radii.lg, borderWidth: 1, padding: spacing.md },
+  cardTop:     { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xs },
+  code:        { fontSize: 14, fontWeight: "800", letterSpacing: 2, fontVariant: ["tabular-nums"] },
+  status:      { fontSize: 12, fontWeight: "600" },
+  title:       { fontSize: 16, fontWeight: "600", marginBottom: 2 },
+  sub:         { fontSize: 13, marginBottom: 2 },
+  meta:        { fontSize: 11 },
+  error:       { textAlign: "center", padding: spacing.md, fontSize: 13 }
 });
