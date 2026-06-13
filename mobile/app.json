@@ -37,7 +37,7 @@
       "typedRoutes": true
     },
     "extra": {
-      "apiBase": "https://golfgv-bchangsewok.azurewebsites.net"
+      "apiBase": "http://localhost:3002"
     }
   }
 }
