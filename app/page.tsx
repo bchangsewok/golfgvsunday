@@ -95,7 +95,7 @@ function RecentRoundsCard() {
           </div>
         </div>
         <Link href="/rounds" className="btn-ghost text-xs py-1 px-2">
-          <ListOrdered className="w-3 h-3" /> Browse all rounds
+          <ListOrdered className="w-3 h-3" /> My rounds
         </Link>
         {editingLabel ? (
           <div className="flex gap-1">
@@ -123,7 +123,7 @@ function RecentRoundsCard() {
           {label && <span className="text-white/40 text-xs">· {label}</span>}
         </h2>
         <Link href="/rounds" className="btn-ghost text-xs py-1 px-2">
-          <ListOrdered className="w-3 h-3" /> Browse all rounds
+          <ListOrdered className="w-3 h-3" /> My rounds
         </Link>
         {editingLabel ? (
           <div className="flex gap-1">
