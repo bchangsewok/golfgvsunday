@@ -56,6 +56,16 @@ export type Score = {
   updated_by: string | null; updated_at: string;
 };
 
+// Summary row returned by GET /api/rounds (browse all)
+export type RoundSummary = {
+  id: string; code: string; name: string;
+  course_name: string | null;
+  hole_count: number; player_count: number;
+  status: "active" | "finished";
+  dog_flight_stake: number; olympic_stake: number; currency: string;
+  created_at: string;
+};
+
 export type DeviceRound = {
   id: string; device_id: string; device_label: string | null;
   round_id: string; player_id: string | null;

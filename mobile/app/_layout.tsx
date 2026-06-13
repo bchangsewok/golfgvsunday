@@ -17,6 +17,7 @@ export default function RootLayout() {
         <Stack.Screen name="index"           options={{ title: "⛳ GolfGV" }} />
         <Stack.Screen name="join"            options={{ title: "Join a round", presentation: "modal" }} />
         <Stack.Screen name="new-round"       options={{ title: "Create round", presentation: "modal" }} />
+        <Stack.Screen name="all-rounds"      options={{ title: "All rounds" }} />
         <Stack.Screen name="settings"        options={{ title: "Settings", presentation: "modal" }} />
         <Stack.Screen name="round/[code]"    options={{ headerShown: false }} />
       </Stack>

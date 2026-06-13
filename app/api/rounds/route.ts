@@ -3,6 +3,19 @@ import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
+// GET /api/rounds  →  most recent rounds (for "browse previous rounds")
+export async function GET(req: NextRequest) {
+  const limit = Math.min(Number(req.nextUrl.searchParams.get("limit") || 50), 200);
+  const rows = db.prepare(`
+    SELECT id, code, name, course_name, hole_count, player_count, status,
+           dog_flight_stake, olympic_stake, currency, created_at
+    FROM rounds
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(limit);
+  return NextResponse.json(rows);
+}
+
 type CreateInput = {
   code: string;
   name: string;

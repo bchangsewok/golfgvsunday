@@ -1,6 +1,6 @@
 // Mobile API client — talks to the same Azure-hosted backend as the web app.
 import Constants from "expo-constants";
-import type { Round, Player, Hole, Score, Course, DeviceRound } from "./types";
+import type { Round, Player, Hole, Score, Course, DeviceRound, RoundSummary } from "./types";
 
 // Resolve API base.
 //   1. explicit override via app.json `extra.apiBase`
@@ -39,6 +39,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   base: API_BASE,
   listCourses: () => req<Course[]>("/api/courses"),
+  listRounds: (limit = 50) => req<RoundSummary[]>(`/api/rounds?limit=${limit}`),
 
   createRound: (body: {
     code: string; name: string;

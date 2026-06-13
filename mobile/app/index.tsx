@@ -44,9 +44,14 @@ export default function Home() {
                 <Text style={[styles.ctaText, { color: colors.text, ...font }]}>📷  Join</Text>
               </Pressable>
             </View>
-            {rounds.length > 0 && (
-              <Text style={[styles.sectionTitle, { color: colors.textDim, ...font }]}>RECENT ROUNDS</Text>
-            )}
+            <View style={styles.sectionHead}>
+              <Text style={[styles.sectionTitle, { color: colors.textDim, ...font }]}>
+                {rounds.length > 0 ? "ON THIS PHONE" : ""}
+              </Text>
+              <Pressable onPress={() => router.push("/all-rounds")}>
+                <Text style={[styles.linkBtn, { color: colors.accent, ...font }]}>Browse all rounds ›</Text>
+              </Pressable>
+            </View>
           </View>
         }
         renderItem={({ item }) => <RoundCard round={item} onChanged={load} />}
@@ -108,7 +113,9 @@ const styles = StyleSheet.create({
   ctaRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xl },
   cta: { flex: 1, paddingVertical: spacing.md, borderRadius: radii.lg, alignItems: "center", ...Platform.select({ ios: { shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } }, android: { elevation: 2 } }) },
   ctaText: { fontSize: 16, fontWeight: "700" },
-  sectionTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 1.4, marginBottom: spacing.sm },
+  sectionHead:  { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm },
+  sectionTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 1.4 },
+  linkBtn:      { fontSize: 13, fontWeight: "600" },
   card: { borderRadius: radii.lg, borderWidth: 1, padding: spacing.md },
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.xs },
   code: { fontSize: 14, fontWeight: "800", letterSpacing: 2, fontVariant: ["tabular-nums"] },
