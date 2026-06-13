@@ -7,14 +7,22 @@ import * as Haptics from "expo-haptics";
 import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { api } from "@/lib/api";
 import { genCode, genToken, PLAYER_COLORS } from "@/lib/defaults";
-import { trackRoundAccess } from "@/lib/device";
+import { trackRoundAccess, getDeviceLabel } from "@/lib/device";
 import type { Course } from "@/lib/types";
+
+// YYMMDD for today's local date
+function yymmdd(d = new Date()): string {
+  const yy = String(d.getFullYear()).slice(-2);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yy}${mm}${dd}`;
+}
 
 const isNative = Platform.OS === "ios" || Platform.OS === "android";
 
 export default function NewRound() {
   const { colors, isDark } = useTheme();
-  const [name, setName]               = useState("Sunday Round");
+  const [name, setName]               = useState(`Round ${yymmdd()}`);
   const [courses, setCourses]         = useState<Course[]>([]);
   const [courseId, setCourseId]       = useState<string | "custom" | "">("");
   const [customName, setCustomName]   = useState("");
@@ -32,6 +40,10 @@ export default function NewRound() {
     api.listCourses()
       .then(setCourses)
       .catch(e => setError(`Couldn't load courses: ${e?.message || e}. API: ${api.base}`));
+    // Seed default round name from device label, e.g. "Bongkarn's iPhone 260613"
+    getDeviceLabel().then(label => {
+      if (label) setName(`${label} ${yymmdd()}`);
+    });
   }, []);
   const selectedCourse = useMemo(() => courses.find(c => c.id === courseId), [courses, courseId]);
   const isCustom = courseId === "custom";
