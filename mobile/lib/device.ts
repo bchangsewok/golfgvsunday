@@ -59,6 +59,14 @@ export async function fetchDeviceRounds() {
   } catch { return []; }
 }
 
+// Look up this device's stored admin_token for a given round, if any.
+// Includes admin grants picked up via same-named devices (label union).
+export async function getAdminTokenForRound(round_id: string): Promise<string | null> {
+  const list = await fetchDeviceRounds();
+  const row  = list.find(d => d.round_id === round_id && d.is_admin === 1 && d.admin_token);
+  return row?.admin_token ?? null;
+}
+
 export async function forgetRound(round_id: string) {
   const id = await getDeviceId();
   await api.forgetDeviceRound(id, round_id);

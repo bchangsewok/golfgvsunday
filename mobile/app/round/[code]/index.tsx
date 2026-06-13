@@ -7,7 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { useRound } from "@/lib/useRound";
 import { api } from "@/lib/api";
-import { trackRoundAccess } from "@/lib/device";
+import { trackRoundAccess, getAdminTokenForRound } from "@/lib/device";
 import type { Player } from "@/lib/types";
 
 const PLAYER_PICK_KEY = (code: string) => `gv:${code}:player`;
@@ -81,7 +81,15 @@ export default function RoundIndex() {
           )}
 
           <Pressable
-            onPress={() => Linking.openURL(`${api.base}/round/${code}${admin ? `?admin=${admin}` : ""}`)}
+            onPress={async () => {
+              // Prefer admin token from URL params; fall back to one this device has stored
+              // for the round (covers QR/code-entry joins where the URL had no admin token).
+              let token = admin;
+              if (!token && round?.id) {
+                token = (await getAdminTokenForRound(round.id)) || undefined;
+              }
+              Linking.openURL(`${api.base}/round/${code}${token ? `?admin=${token}` : ""}`);
+            }}
             style={[styles.btnGhost, { borderColor: colors.border }]}>
             <Text style={[styles.btnGhostText, { color: colors.textDim, ...font }]}>📊  Open live dashboard (web)</Text>
           </Pressable>
