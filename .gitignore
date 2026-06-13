@@ -17,6 +17,11 @@ out/
 # Backups (kept locally, not pushed)
 Revisions/
 
+# Expo intermediate build output — final files committed under public/m/
+mobile/dist/
+mobile/.expo/
+mobile/node_modules/
+
 # Live SQLite data — never push round data to a public repo
 data/*.db
 data/*.db-shm

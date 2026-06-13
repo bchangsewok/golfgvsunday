@@ -34,7 +34,8 @@
     },
     "plugins": ["expo-router", "expo-camera"],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "baseUrl": "/m"
     },
     "extra": {
       "apiBase": "https://app-golvgv-ctfqb6bzf7cshccx.australiacentral-01.azurewebsites.net"
