@@ -6,6 +6,7 @@ import { useLocalSearchParams, router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { useRound } from "@/lib/useRound";
+import { api } from "@/lib/api";
 import { trackRoundAccess } from "@/lib/device";
 import type { Player } from "@/lib/types";
 
@@ -80,7 +81,7 @@ export default function RoundIndex() {
           )}
 
           <Pressable
-            onPress={() => Linking.openURL(`http://localhost:3002/round/${code}${admin ? `?admin=${admin}` : ""}`)}
+            onPress={() => Linking.openURL(`${api.base}/round/${code}${admin ? `?admin=${admin}` : ""}`)}
             style={[styles.btnGhost, { borderColor: colors.border }]}>
             <Text style={[styles.btnGhostText, { color: colors.textDim, ...font }]}>📊  Open live dashboard (web)</Text>
           </Pressable>
