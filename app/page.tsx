@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { Course } from "@/lib/types";
 import { genCode, genToken, PLAYER_COLORS } from "@/lib/defaults";
-import { Loader2, Plus, LogIn, MapPin, Smartphone, Crown, Edit3, X, Trash2 } from "lucide-react";
+import { Loader2, Plus, LogIn, MapPin, Smartphone, Crown, Edit3, X, Trash2, ListOrdered } from "lucide-react";
 import Link from "next/link";
 import { fetchDeviceRounds, getDeviceLabel, setDeviceLabel, trackRoundAccess, forgetRound, type DeviceRound } from "@/lib/device";
 
@@ -84,7 +84,7 @@ function RecentRoundsCard() {
 
   if (!rounds || rounds.length === 0) {
     return (
-      <div className="card p-4 flex items-center justify-between gap-3">
+      <div className="card p-4 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
           <Smartphone className="w-5 h-5 text-white/40 flex-shrink-0" />
           <div className="min-w-0">
@@ -94,6 +94,9 @@ function RecentRoundsCard() {
             <div className="text-white/40 text-xs">Create or join a round below — it'll appear here next time.</div>
           </div>
         </div>
+        <Link href="/rounds" className="btn-ghost text-xs py-1 px-2">
+          <ListOrdered className="w-3 h-3" /> Browse all rounds
+        </Link>
         {editingLabel ? (
           <div className="flex gap-1">
             <input className="input py-1 text-xs w-40"
@@ -119,6 +122,9 @@ function RecentRoundsCard() {
           <Smartphone className="w-4 h-4 text-fairway-500" /> Your recent rounds
           {label && <span className="text-white/40 text-xs">· {label}</span>}
         </h2>
+        <Link href="/rounds" className="btn-ghost text-xs py-1 px-2">
+          <ListOrdered className="w-3 h-3" /> Browse all rounds
+        </Link>
         {editingLabel ? (
           <div className="flex gap-1">
             <input className="input py-1 text-xs w-40"

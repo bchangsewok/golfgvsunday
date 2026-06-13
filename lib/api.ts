@@ -1,6 +1,15 @@
 // Client-side API wrapper (replaces supabase calls).
 import type { Course, Round, Player, Hole, Score } from "./types";
 
+export type RoundSummary = {
+  id: string; code: string; name: string;
+  course_name: string | null;
+  hole_count: number; player_count: number;
+  status: "active" | "finished";
+  dog_flight_stake: number; olympic_stake: number; currency: string;
+  created_at: string;
+};
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error((await res.json().catch(() => ({ error: res.statusText }))).error || "request failed");
   return res.json();
@@ -8,6 +17,7 @@ async function json<T>(res: Response): Promise<T> {
 
 export const api = {
   listCourses: () => fetch("/api/courses").then(r => json<Course[]>(r)),
+  listRounds: (limit = 100) => fetch(`/api/rounds?limit=${limit}`).then(r => json<RoundSummary[]>(r)),
 
   createRound: (body: {
     code: string; name: string; course_name: string; course_id: string | null;
