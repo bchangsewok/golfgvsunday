@@ -152,6 +152,10 @@ export default function NewRound() {
 
       {error && <Text style={[styles.errorText, { color: colors.danger, ...font }]}>{error}</Text>}
 
+      <Text style={[styles.debugText, { color: colors.textMuted, ...font }]}>
+        api: {api.base}  ·  {courses.length} courses loaded
+      </Text>
+
       <Pressable onPress={submit} disabled={submitting}
         style={[styles.submitBtn, { backgroundColor: colors.accent, opacity: submitting ? 0.5 : 1 }]}>
         {submitting
@@ -245,6 +249,7 @@ const styles = StyleSheet.create({
   colorDot: { width: 12, height: 12, borderRadius: 6 },
 
   errorText: { textAlign: "center", marginTop: spacing.md, fontSize: 13 },
+  debugText: { textAlign: "center", marginTop: spacing.sm, fontSize: 10 },
   submitBtn: { marginTop: spacing.lg, paddingVertical: spacing.md, borderRadius: radii.lg, alignItems: "center" },
   submitText: { fontSize: 16, fontWeight: "700" },
   cancelText: { fontSize: 14 },

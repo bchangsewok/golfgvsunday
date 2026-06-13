@@ -1,17 +1,24 @@
 // Mobile API client — talks to the same Azure-hosted backend as the web app.
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 import type { Round, Player, Hole, Score, Course, DeviceRound, RoundSummary } from "./types";
 
 // Resolve API base.
-//   1. explicit override via app.json `extra.apiBase`
-//   2. otherwise derive from Expo dev server host (so a real phone on the LAN
-//      hits the dev machine's IP, not its own localhost)
-//   3. fall back to the public Azure URL
+//   1. on WEB: use the same hostname the page was loaded from (port 3002).
+//      Whatever IP loaded the Expo web bundle, the backend lives on :3002
+//      of that same host. Cache-proof: no app.json read needed.
+//   2. on native: explicit override from app.json `extra.apiBase` (unless it's localhost)
+//   3. derive from Expo dev server host (LAN IP) when explicit is missing/localhost
+//   4. fall back to the public Azure URL
 function resolveBase(): string {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host) return `${window.location.protocol}//${host}:3002`;
+  }
+
   const explicit = (Constants.expoConfig?.extra as any)?.apiBase as string | undefined;
   if (explicit && !/localhost|127\.0\.0\.1/.test(explicit)) return explicit;
 
-  // `hostUri` looks like "192.168.1.12:8081" when Metro is running on the LAN.
   const hostUri: string | undefined =
     (Constants.expoConfig as any)?.hostUri ||
     (Constants as any)?.expoGoConfig?.hostUri ||
