@@ -102,8 +102,11 @@ export const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   }),
-  listDeviceRounds: (device_id: string) =>
-    req<DeviceRound[]>(`/api/device/rounds?device_id=${encodeURIComponent(device_id)}`),
+  listDeviceRounds: (device_id: string, device_label?: string) => {
+    const qs = new URLSearchParams({ device_id });
+    if (device_label) qs.set("device_label", device_label);
+    return req<DeviceRound[]>(`/api/device/rounds?${qs.toString()}`);
+  },
   forgetDeviceRound: (device_id: string, round_id: string) =>
     req<{ ok: true }>(`/api/device/rounds?device_id=${encodeURIComponent(device_id)}&round_id=${encodeURIComponent(round_id)}`,
       { method: "DELETE" })

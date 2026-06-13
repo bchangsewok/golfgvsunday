@@ -53,8 +53,9 @@ export async function trackRoundAccess(opts: {
 
 export async function fetchDeviceRounds() {
   try {
-    const id = await getDeviceId();
-    return await api.listDeviceRounds(id);
+    const id    = await getDeviceId();
+    const label = await getDeviceLabel();
+    return await api.listDeviceRounds(id, label || undefined);
   } catch { return []; }
 }
 

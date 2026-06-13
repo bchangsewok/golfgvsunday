@@ -81,10 +81,13 @@ export async function trackRoundAccess(opts: {
 }
 
 export async function fetchDeviceRounds(): Promise<DeviceRound[]> {
-  const device_id = getDeviceId();
+  const device_id    = getDeviceId();
+  const device_label = getDeviceLabel();
   if (!device_id) return [];
   try {
-    const r = await fetch(`/api/device/rounds?device_id=${encodeURIComponent(device_id)}`);
+    const qs = new URLSearchParams({ device_id });
+    if (device_label) qs.set("device_label", device_label);
+    const r = await fetch(`/api/device/rounds?${qs.toString()}`);
     if (!r.ok) return [];
     return await r.json();
   } catch { return []; }

@@ -3,10 +3,20 @@ import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/device/rounds?device_id=XXX  →  rounds this device has seen, newest last_seen first
+// GET /api/device/rounds?device_id=XXX[&device_label=YYY]
+//   Returns rounds visible to this device: matched by device_id OR by device_label
+//   (so when the user shares the same label across multiple phones / browsers,
+//   they see the union of all rounds those devices have touched).
+//   Newest last_seen first, deduped per round_id (best row wins: admin > player > viewer).
 export async function GET(req: NextRequest) {
-  const device_id = req.nextUrl.searchParams.get("device_id");
-  if (!device_id) return NextResponse.json([], { status: 200 });
+  const device_id    = req.nextUrl.searchParams.get("device_id");
+  const device_label = req.nextUrl.searchParams.get("device_label")?.trim();
+  if (!device_id && !device_label) return NextResponse.json([], { status: 200 });
+
+  const conds: string[] = [];
+  const params: any[]   = [];
+  if (device_id)    { conds.push("dr.device_id = ?");    params.push(device_id); }
+  if (device_label) { conds.push("dr.device_label = ?"); params.push(device_label); }
 
   const rows = db.prepare(`
     SELECT dr.id, dr.device_id, dr.device_label, dr.round_id, dr.player_id,
@@ -17,11 +27,26 @@ export async function GET(req: NextRequest) {
     FROM device_rounds dr
     JOIN rounds r ON r.id = dr.round_id
     LEFT JOIN players p ON p.id = dr.player_id
-    WHERE dr.device_id = ?
+    WHERE ${conds.join(" OR ")}
     ORDER BY dr.last_seen DESC
-    LIMIT 30
-  `).all(device_id);
-  return NextResponse.json(rows);
+    LIMIT 100
+  `).all(...params) as any[];
+
+  // Dedupe per round: keep the "best" row (admin > player > viewer), then most recent.
+  const byRound = new Map<string, any>();
+  function score(r: any) {
+    if (r.is_admin === 1) return 3;
+    if (r.player_id)      return 2;
+    return 1;
+  }
+  for (const r of rows) {
+    const prev = byRound.get(r.round_id);
+    if (!prev || score(r) > score(prev) || (score(r) === score(prev) && r.last_seen > prev.last_seen)) {
+      byRound.set(r.round_id, r);
+    }
+  }
+  const merged = Array.from(byRound.values()).sort((a, b) => b.last_seen.localeCompare(a.last_seen));
+  return NextResponse.json(merged);
 }
 
 // POST /api/device/rounds  → upsert (device_id, round_id) and bump last_seen
