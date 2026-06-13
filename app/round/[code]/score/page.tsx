@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useRound } from "@/lib/useRound";
 import { api, safeCall } from "@/lib/api";
+import { trackRoundAccess } from "@/lib/device";
 import { mergedSettings } from "@/lib/defaults";
 import { ChevronLeft, ChevronRight, Check, Edit2, Crown } from "lucide-react";
 import { entryButtonsFor, termFor } from "@/lib/golfTerms";
@@ -36,7 +37,11 @@ export default function ScoreEntry({ params }: { params: { code: string } }) {
 
   function pickSeat(id: string) {
     setMyPlayerId(id);
-    if (round) localStorage.setItem(`gv:${round.code}:player`, id);
+    if (round) {
+      localStorage.setItem(`gv:${round.code}:player`, id);
+      // Register this device as that player on this round
+      trackRoundAccess({ round_id: round.id, player_id: id });
+    }
   }
 
   if (loading) return <div className="text-white/60 text-center py-20">Loading…</div>;

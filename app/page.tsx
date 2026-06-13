@@ -5,13 +5,17 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { Course } from "@/lib/types";
 import { genCode, genToken, PLAYER_COLORS } from "@/lib/defaults";
-import { Loader2, Plus, LogIn, MapPin } from "lucide-react";
+import { Loader2, Plus, LogIn, MapPin, Smartphone, Crown, Edit3, X, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { fetchDeviceRounds, getDeviceLabel, setDeviceLabel, trackRoundAccess, forgetRound, type DeviceRound } from "@/lib/device";
 
 export default function Home() {
   const router = useRouter();
   const [tab, setTab] = useState<"create" | "join">("create");
 
   return (
+    <div className="space-y-6">
+      <RecentRoundsCard />
     <div className="grid md:grid-cols-2 gap-6 items-start">
       <section className="space-y-4">
         <h1 className="text-4xl md:text-5xl font-extrabold text-white leading-tight">
@@ -45,6 +49,127 @@ export default function Home() {
         {tab === "create"
           ? <CreateRound onCreated={(code, token) => router.push(`/round/${code}?admin=${token}`)} />
           : <JoinRound  onJoined={code => router.push(`/round/${code}`)} />}
+      </div>
+    </div>
+    </div>
+  );
+}
+
+function RecentRoundsCard() {
+  const [rounds, setRounds] = useState<DeviceRound[] | null>(null);
+  const [label, setLabelState] = useState("");
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState("");
+
+  async function reload() {
+    setRounds(await fetchDeviceRounds());
+  }
+  useEffect(() => {
+    setLabelState(getDeviceLabel());
+    reload();
+  }, []);
+
+  function saveLabel() {
+    const trimmed = labelDraft.trim();
+    setDeviceLabel(trimmed);
+    setLabelState(trimmed);
+    setEditingLabel(false);
+  }
+
+  async function handleForget(round_id: string) {
+    if (!confirm("Forget this round from your device?")) return;
+    await forgetRound(round_id);
+    reload();
+  }
+
+  if (!rounds || rounds.length === 0) {
+    return (
+      <div className="card p-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <Smartphone className="w-5 h-5 text-white/40 flex-shrink-0" />
+          <div className="min-w-0">
+            <div className="text-white/70 text-sm">
+              {label ? <>This is <b className="text-white">{label}</b></> : "No recent rounds yet on this device."}
+            </div>
+            <div className="text-white/40 text-xs">Create or join a round below — it'll appear here next time.</div>
+          </div>
+        </div>
+        {editingLabel ? (
+          <div className="flex gap-1">
+            <input className="input py-1 text-xs w-40"
+              placeholder="e.g. Bongkarn's iPhone"
+              value={labelDraft} onChange={e => setLabelDraft(e.target.value)}
+              autoFocus />
+            <button onClick={saveLabel} className="btn-primary py-1 px-2 text-xs">Save</button>
+            <button onClick={() => setEditingLabel(false)} className="btn-ghost py-1 px-2 text-xs"><X className="w-3 h-3" /></button>
+          </div>
+        ) : (
+          <button onClick={() => { setLabelDraft(label); setEditingLabel(true); }} className="btn-ghost text-xs py-1 px-2">
+            <Edit3 className="w-3 h-3" /> {label ? "Rename" : "Name this device"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h2 className="text-white font-semibold flex items-center gap-2">
+          <Smartphone className="w-4 h-4 text-fairway-500" /> Your recent rounds
+          {label && <span className="text-white/40 text-xs">· {label}</span>}
+        </h2>
+        {editingLabel ? (
+          <div className="flex gap-1">
+            <input className="input py-1 text-xs w-40"
+              placeholder="e.g. Bongkarn's iPhone"
+              value={labelDraft} onChange={e => setLabelDraft(e.target.value)}
+              autoFocus />
+            <button onClick={saveLabel} className="btn-primary py-1 px-2 text-xs">Save</button>
+            <button onClick={() => setEditingLabel(false)} className="btn-ghost py-1 px-2 text-xs"><X className="w-3 h-3" /></button>
+          </div>
+        ) : (
+          <button onClick={() => { setLabelDraft(label); setEditingLabel(true); }} className="btn-ghost text-xs py-1 px-2">
+            <Edit3 className="w-3 h-3" /> {label ? "Rename" : "Name device"}
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        {rounds.map(r => {
+          const isAdmin = r.is_admin === 1 && r.admin_token;
+          const href = `/round/${r.code}${isAdmin ? `?admin=${r.admin_token}` : ""}`;
+          return (
+            <div key={r.id} className="bg-white/5 rounded-xl p-3 border border-white/10 hover:bg-white/10 transition group relative">
+              <Link href={href} className="block">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <code className="text-fairway-500 font-bold text-sm tracking-wider">{r.code}</code>
+                  {isAdmin && <span className="chip bg-sand-500/20 text-sand-500 border border-sand-500/30 text-[10px]"><Crown className="w-3 h-3" />Admin</span>}
+                  {!isAdmin && r.player_id && (
+                    <span className="chip bg-fairway-500/20 text-fairway-500 border border-fairway-500/30 text-[10px]" style={{ background: `${r.player_color}30`, color: r.player_color, borderColor: `${r.player_color}60` }}>
+                      {r.player_name}
+                    </span>
+                  )}
+                  {!isAdmin && !r.player_id && <span className="chip bg-white/5 text-white/50 border border-white/10 text-[10px]">viewer</span>}
+                </div>
+                <div className="text-white text-sm font-semibold truncate">{r.name}</div>
+                <div className="text-white/40 text-xs flex items-center gap-1 truncate">
+                  {r.course_name && <><MapPin className="w-3 h-3 flex-shrink-0" />{r.course_name}</>}
+                </div>
+                <div className="text-white/30 text-[10px] mt-1">
+                  {r.status === "active"
+                    ? <span className="text-fairway-500">● live</span>
+                    : "✓ finished"} · last seen {new Date(r.last_seen + "Z").toLocaleString()}
+                </div>
+              </Link>
+              <button
+                onClick={(e) => { e.preventDefault(); handleForget(r.round_id); }}
+                className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-red-500/20 opacity-0 group-hover:opacity-100 transition"
+                title="Forget this round from device">
+                <Trash2 className="w-3 h-3 text-red-400" />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -109,6 +234,8 @@ function CreateRound({ onCreated }: { onCreated: (code: string, adminToken: stri
         pars,
         players
       });
+      // Register this device as the round admin
+      await trackRoundAccess({ round_id: res.id, is_admin: true, admin_token: res.admin_token });
       onCreated(res.code, res.admin_token);
     } catch (e: any) {
       setErr(e?.message || "Something went wrong");
@@ -221,7 +348,9 @@ function JoinRound({ onJoined }: { onJoined: (code: string) => void }) {
     if (c.length < 4) { setErr("Enter the round code"); return; }
     setLoading(true); setErr(null);
     try {
-      await api.getRound(c);
+      const data = await api.getRound(c);
+      // Register this device as a viewer of the round (auto-tracking)
+      if (data?.round?.id) await trackRoundAccess({ round_id: data.round.id });
       onJoined(c);
     } catch {
       setErr("Round not found");

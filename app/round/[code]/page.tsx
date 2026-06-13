@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useRound } from "@/lib/useRound";
 import { calculate } from "@/lib/scoring";
 import { api, safeCall } from "@/lib/api";
+import { trackRoundAccess } from "@/lib/device";
 import { QRCodeSVG } from "qrcode.react";
 import { Copy, Crown, Users, Edit3, Settings, Share2, Trophy, Target, Flag, Swords, Zap, HelpCircle, Users2, LayoutGrid, Rows3 } from "lucide-react";
 import { termFor } from "@/lib/golfTerms";
@@ -30,6 +31,17 @@ export default function RoundPage({ params }: { params: { code: string } }) {
       olympic:   Number(round.olympic_stake   ?? round.stake_per_point ?? 10)
     });
   }, [round, players, holes, scores]);
+
+  // Track this device's access to the round so it appears in "Your Recent Rounds"
+  useEffect(() => {
+    if (!round) return;
+    const isAdmin = adminToken && adminToken === round.admin_token;
+    trackRoundAccess({
+      round_id: round.id,
+      is_admin: !!isAdmin,
+      admin_token: isAdmin ? adminToken : null
+    });
+  }, [round?.id, adminToken]);
 
   // Raw input sums per player.
   const rawInputs = useMemo(() => {

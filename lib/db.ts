@@ -49,6 +49,23 @@ function migrate(d: Database.Database) {
     d.exec("ALTER TABLE players ADD COLUMN food_expenses REAL NOT NULL DEFAULT 0");
   if (!hasColumn(d, "players", "team"))
     d.exec("ALTER TABLE players ADD COLUMN team TEXT");                     // null | 'A' | 'B'
+  // device_rounds table — links each browser/device to the rounds it has interacted with
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS device_rounds (
+      id TEXT PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      device_label TEXT,
+      round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+      player_id TEXT REFERENCES players(id) ON DELETE SET NULL,
+      is_admin INTEGER NOT NULL DEFAULT 0,
+      admin_token TEXT,
+      first_seen TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (device_id, round_id)
+    );
+    CREATE INDEX IF NOT EXISTS device_rounds_device_idx ON device_rounds(device_id);
+    CREATE INDEX IF NOT EXISTS device_rounds_round_idx  ON device_rounds(round_id);
+  `);
   if (!hasColumn(d, "rounds", "team_play_enabled"))
     d.exec("ALTER TABLE rounds ADD COLUMN team_play_enabled INTEGER NOT NULL DEFAULT 0");
   if (!hasColumn(d, "rounds", "team_play_stake"))
