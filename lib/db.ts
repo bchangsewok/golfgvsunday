@@ -56,7 +56,15 @@ function migrate(d: Database.Database) {
 }
 
 function open(): Database.Database {
-  const DATA_DIR = path.join(process.cwd(), "data");
+  // Pick a persistent data directory:
+  //  - Azure App Service Linux: /home/ is the only path that survives restarts
+  //  - Everything else (GCP VM, local dev): ./data relative to cwd
+  // Override with GOLFGV_DATA_DIR env var for full control.
+  const DATA_DIR =
+    process.env.GOLFGV_DATA_DIR ??
+    (process.env.WEBSITE_INSTANCE_ID                      // Azure App Service marker
+      ? path.join(process.env.HOME ?? "/home", "data")
+      : path.join(process.cwd(), "data"));
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   const d = new Database(path.join(DATA_DIR, "golfgvsunday.db"));
   d.pragma("journal_mode = WAL");
