@@ -132,6 +132,20 @@ export default function ScoreEntry() {
     showToast(`✓  ${parsed.summary}`);
   }
 
+  function handleVoiceError(code: string) {
+    buzz("err");
+    if (code === "insecure-context")
+      showToast("🔒  Voice needs HTTPS. Open the Azure URL on your phone.");
+    else if (code === "no-speech")
+      showToast("🤫  Didn't catch any speech. Try again.");
+    else if (code === "not-allowed" || code === "service-not-allowed")
+      showToast("🎤  Microphone blocked. Allow it in browser settings.");
+    else if (code === "audio-capture")
+      showToast("🎤  No microphone found.");
+    else
+      showToast(`🎤  ${code}`);
+  }
+
   function startVoice() {
     if (!voiceSupported || voiceState === "listening") return;
     buzz("select");
@@ -139,9 +153,11 @@ export default function ScoreEntry() {
     setVoiceState("listening");
     voiceRef.current = createVoiceListener({
       onPartial: setVoiceText,
-      onFinal:   (text) => { setVoiceState("thinking"); applyParse(text); setVoiceState("idle"); setVoiceText(""); },
-      onError:   (msg)  => { setVoiceState("idle"); setVoiceText(""); showToast(`🎤 ${msg}`); buzz("err"); },
-      onEnd:     ()     => { /* state cleared by onFinal/onError */ }
+      onFinal:   (text) => { setVoiceState("thinking"); applyParse(text); },
+      onError:   handleVoiceError,
+      // Always reset UI here so a stuck "Listening…" can't happen,
+      // regardless of which terminal callback fired.
+      onEnd:     ()     => { setVoiceState("idle"); setVoiceText(""); }
     });
     voiceRef.current.start();
   }

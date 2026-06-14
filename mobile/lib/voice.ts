@@ -1,20 +1,21 @@
 // Push-to-talk voice listener — thin wrapper around the browser's Web Speech API.
-// Only works on web builds (Safari, Chrome). On native (Expo Go) it reports
-// isSupported=false; callers should hide the mic button there.
+// Only works on web builds in a SECURE context (https or localhost).
+// Returns isSupported=false on native (Expo Go) and on http://LAN-IP/... pages.
 import { Platform } from "react-native";
 
 export type VoiceListener = {
   isSupported: boolean;
   start: () => void;
-  stop: () => void;
+  stop:  () => void;
 };
 
 type VoiceOpts = {
   onPartial?: (text: string) => void;
   onFinal:    (text: string) => void;
-  onError?:   (msg: string) => void;
-  onEnd?:     () => void;
-  lang?:      string;   // default "en-US"
+  onError?:   (code: string) => void;
+  onEnd?:     () => void;   // always fires once per session, regardless of outcome
+  lang?:      string;
+  maxMs?:     number;       // safety auto-stop (default 12 000 ms)
 };
 
 export function createVoiceListener(opts: VoiceOpts): VoiceListener {
@@ -24,78 +25,82 @@ export function createVoiceListener(opts: VoiceOpts): VoiceListener {
   const SR =
     (window as any).SpeechRecognition ||
     (window as any).webkitSpeechRecognition;
-  if (!SR) {
-    return { isSupported: false, start: () => {}, stop: () => {} };
-  }
+  if (!SR) return { isSupported: false, start: () => {}, stop: () => {} };
+
+  // Secure-context check: SpeechRecognition silently produces no audio
+  // on http://LAN-IP in iOS Safari and Chrome. Surface this explicitly.
+  const secure =
+    (window as any).isSecureContext === true ||
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1";
 
   let rec: any = null;
-  let stopped = false;
+  let lastText  = "";
+  let ended     = false;
+  let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function cleanup() {
+    if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
+    rec = null;
+  }
+
+  function finishOnce(reason: "final" | "no-speech" | "error", payload?: string) {
+    if (ended) return;
+    ended = true;
+    if (reason === "final" && payload) opts.onFinal(payload);
+    else if (reason === "no-speech")    opts.onError?.("no-speech");
+    else if (reason === "error")        opts.onError?.(payload || "unknown");
+    opts.onEnd?.();
+    cleanup();
+  }
 
   function start() {
-    stopped = false;
-    rec = new SR();
-    rec.lang = opts.lang ?? "en-US";
-    rec.continuous = false;       // push-to-talk: one utterance per session
-    rec.interimResults = true;
+    if (!secure) {                // tell the caller why nothing will happen
+      opts.onError?.("insecure-context");
+      opts.onEnd?.();
+      return;
+    }
+    ended    = false;
+    lastText = "";
+    rec      = new SR();
+    rec.lang            = opts.lang ?? "en-US";
+    rec.continuous      = false;
+    rec.interimResults  = true;
     rec.maxAlternatives = 1;
 
-    let finalText = "";
-
     rec.onresult = (e: any) => {
-      let partial = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) finalText += r[0].transcript;
-        else           partial   += r[0].transcript;
-      }
-      const all = (finalText + " " + partial).trim();
-      if (all) opts.onPartial?.(all);
+      let text = "";
+      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+      lastText = text.trim();
+      if (lastText) opts.onPartial?.(lastText);
     };
     rec.onerror = (e: any) => {
-      // "no-speech" / "aborted" are common and not interesting to surface
       const code = e?.error || "unknown";
-      if (code !== "no-speech" && code !== "aborted") opts.onError?.(code);
+      // Browser often fires "no-speech"/"aborted" at the natural end of a session;
+      // treat them as benign no-result rather than errors.
+      if (code === "no-speech" || code === "aborted") return;
+      finishOnce("error", code);
     };
     rec.onend = () => {
-      if (!stopped) {
-        // Browser ended early (e.g. silence). Treat whatever we got as final.
-        const text = finalText.trim();
-        if (text) opts.onFinal(text);
-      }
-      opts.onEnd?.();
-      rec = null;
+      finishOnce(lastText ? "final" : "no-speech", lastText);
     };
 
     try {
       rec.start();
     } catch (e: any) {
-      opts.onError?.(e?.message || "start failed");
+      finishOnce("error", e?.message || "start-failed");
+      return;
     }
+
+    // Safety auto-stop: if a release event never reaches us (e.g. iOS gesture
+    // routing eats onPressOut), don't let the UI sit on "Listening" forever.
+    safetyTimer = setTimeout(() => { try { rec?.stop(); } catch {} }, opts.maxMs ?? 12000);
   }
 
   function stop() {
-    stopped = true;
-    if (!rec) return;
-    try { rec.stop(); } catch {}
-    // The browser fires onresult+onend asynchronously; commit whatever we have.
+    try { rec?.stop(); } catch {}
+    // onend will fire and trigger finishOnce.
   }
 
-  // Wrap stop so the last partial becomes final.
-  const wrappedOpts = opts;
-  const origStart = start;
-  function startWithCommit() {
-    let lastText = "";
-    const origPartial = wrappedOpts.onPartial;
-    wrappedOpts.onPartial = (t: string) => { lastText = t; origPartial?.(t); };
-    const origEnd = wrappedOpts.onEnd;
-    wrappedOpts.onEnd = () => {
-      if (stopped && lastText) wrappedOpts.onFinal(lastText);
-      wrappedOpts.onPartial = origPartial;
-      wrappedOpts.onEnd = origEnd;
-      origEnd?.();
-    };
-    origStart();
-  }
-
-  return { isSupported: true, start: startWithCommit, stop };
+  return { isSupported: true, start, stop };
 }
