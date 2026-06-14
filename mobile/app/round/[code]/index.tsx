@@ -88,7 +88,10 @@ export default function RoundIndex() {
               if (!token && round?.id) {
                 token = (await getAdminTokenForRound(round.id)) || undefined;
               }
-              Linking.openURL(`${api.base}/round/${code}${token ? `?admin=${token}` : ""}`);
+              // If this device is admin, deep-link to the admin page (hole multiplier,
+              // player flags, etc.). Otherwise open the regular dashboard.
+              const path = token ? `/round/${code}/admin?admin=${token}` : `/round/${code}`;
+              Linking.openURL(`${api.base}${path}`);
             }}
             style={[styles.btnGhost, { borderColor: colors.border }]}>
             <Text style={[styles.btnGhostText, { color: colors.textDim, ...font }]}>📊  Open live dashboard (web)</Text>
