@@ -107,9 +107,13 @@ export default function ScoreEntry() {
     setTimeout(() => setVoiceToast(""), 1800);
   }
 
-  function applyParse(text: string) {
+  async function applyParse(text: string) {
     if (!hole || !round || !me) return;
-    const parsed = parseVoice(text, hole.par);
+    const parsed = parseVoice(text, {
+      par: hole.par,
+      players: players.map(p => ({ id: p.id, name: p.name })),
+      holes:   sortedHoles.map(h => ({ id: h.id, number: h.number, par: h.par }))
+    });
     if (!parsed) {
       buzz("err");
       showToast(`🤷  Couldn't understand "${text}"`);
@@ -118,19 +122,59 @@ export default function ScoreEntry() {
     if (parsed.command === "next") { gotoHole(holeIdx + 1); showToast("⏭  Next hole"); return; }
     if (parsed.command === "back") { gotoHole(holeIdx - 1); showToast("⏮  Previous hole"); return; }
 
+    // Resolve target hole + player from the parsed prefixes, falling back to current state.
+    const targetHole = parsed.hole_number != null
+      ? sortedHoles.find(h => h.number === parsed.hole_number) ?? hole
+      : hole;
+    const targetPlayer = parsed.player_id
+      ? players.find(p => p.id === parsed.player_id) ?? me
+      : me;
+
     const patch: Partial<Pick<Score, "strokes" | "olympic_points" | "olympic_special_points" | "sao_points">> = {};
     if (parsed.strokes != null)                patch.strokes = parsed.strokes;
     if (parsed.olympic_points != null)         patch.olympic_points = parsed.olympic_points;
     if (parsed.olympic_special_points != null) patch.olympic_special_points = parsed.olympic_special_points;
     if (parsed.sao_points != null)             patch.sao_points = parsed.sao_points;
+
+    // Move UI to the targeted hole/player so the user sees the result immediately.
+    const movedHole   = targetHole.id   !== hole.id;
+    const movedPlayer = targetPlayer.id !== me.id;
+    if (movedHole) {
+      const idx = sortedHoles.findIndex(h => h.id === targetHole.id);
+      if (idx >= 0) setHoleIdx(idx);
+    }
+    if (movedPlayer) {
+      setActivePlayerId(targetPlayer.id);
+      await AsyncStorage.setItem(PLAYER_PICK_KEY(code), targetPlayer.id);
+    }
+
     if (Object.keys(patch).length === 0) {
-      buzz("err");
-      showToast(`🤷  "${text}"`);
+      // No score data — just a hole/player jump. Still useful, confirm.
+      buzz("select");
+      showToast(`→  ${parsed.summary}`);
       return;
     }
-    save(patch);
-    buzz("ok");
-    showToast(`✓  ${parsed.summary}`);
+
+    // Save against the EXPLICIT target IDs (don't depend on React state catching up).
+    setSavingHint("saving");
+    try {
+      const updated = await api.upsertScore({
+        round_id: round.id,
+        hole_id:  targetHole.id,
+        player_id: targetPlayer.id,
+        updated_by: "self",
+        ...patch
+      });
+      setScore(updated);
+      buzz("ok");
+      setSavingHint("saved");
+      setTimeout(() => setSavingHint(""), 900);
+      showToast(`✓  ${parsed.summary}`);
+    } catch (e: any) {
+      setSavingHint("");
+      buzz("err");
+      showToast(`🎤  ${e?.message || "Save failed"}`);
+    }
   }
 
   function handleVoiceError(code: string) {
@@ -239,7 +283,7 @@ export default function ScoreEntry() {
                 </Text>
               ) : (
                 <Text style={[styles.voiceHint, { color: colors.textMuted, ...font }]} numberOfLines={1}>
-                  e.g. "4133" = str·oly·spec·sao  ·  "birdie"  ·  "next"
+                  e.g. "hole 1 Noo 4133"  ·  "BK birdie"  ·  "next"
                 </Text>
               )}
             </View>

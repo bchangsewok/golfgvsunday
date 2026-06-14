@@ -1,175 +1,238 @@
-// Turn a voice transcript into a score patch.
-// Grammar (English, v1):
-//   "three", "four", "5", "six", "seven", "eight", "nine"   → strokes = N
-//   "birdie" / "eagle" / "par" / "bogey" / "double" / "triple"
-//                                                           → strokes = par + offset
-//   "olympic two", "oly minus one", "plus three olympic"    → olympic_points
-//   "special five", "kp"                                    → olympic_special_points
-//   "next" / "back" / "previous"                            → navigation command
+// Voice transcript → score patch.
 //
-// Returns null when nothing parseable was found.
+// One utterance can carry up to three intents at once, in order:
+//   1. Hole selector       — "hole 7", "h 7", "hole seven"
+//   2. Player selector     — first word(s) matching a player name on the round
+//   3. Score data          — digits / keywords, e.g. "4133", "birdie", "olympic 2"
+//
+// Examples (round with players Noo, BK, Pong on a par-4 hole):
+//   "hole 1 noo 4133"          → jump hole 1, switch to Noo, str=4 oly=1 spc=3 sao=3
+//   "noo birdie"               → switch to Noo, strokes = par-1
+//   "bk olympic 2"             → switch to BK, olympic_points=2 (no stroke change)
+//   "4"                        → strokes=4 for current player on current hole
+//   "next"                     → navigate hole+1
+//
+// Anything the parser can't match returns `null` so the UI shows the raw text.
+
+export type PlayerRef  = { id: string; name: string };
+export type HoleRef    = { id: string; number: number; par: number };
+
+export type ParseCtx = {
+  par:      number;          // par for the CURRENT hole (used by birdie/par/bogey terms when no hole jump)
+  players?: PlayerRef[];     // optional — enables player-name matching
+  holes?:   HoleRef[];       // optional — enables hole-number matching
+};
 
 export type ParsedScore = {
+  hole_number?:             number;
+  player_id?:               string;
   strokes?:                 number;
   olympic_points?:          number;
   olympic_special_points?:  number;
   sao_points?:              number;
   command?:                 "next" | "back";
-  // Human-readable summary for toast/feedback. Always set when result is non-null.
-  summary:                  string;
+  summary:                  string;     // human-readable, set when any field is set
 };
 
+// ───────────────────────── lexicons ─────────────────────────
 const WORD_NUM: Record<string, number> = {
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
   six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
   minus: -1, negative: -1, plus: 1, positive: 1
 };
-
-// Term → strokes offset relative to par
 const TERM_OFFSET: Record<string, number> = {
-  "hole in one": -100,   // sentinel: caller resolves to strokes=1
-  "ace":         -100,
-  "albatross":   -3,
-  "double eagle":-3,
-  "eagle":       -2,
-  "birdie":      -1,
-  "par":          0,
-  "bogey":        1,
-  "double bogey": 2,
-  "double":       2,
-  "triple bogey": 3,
-  "triple":       3,
-  "quad":         4
+  "hole in one": -100, "ace": -100,
+  "albatross": -3, "double eagle": -3,
+  "eagle": -2,
+  "birdie": -1,
+  "par":     0,
+  "bogey":   1,
+  "double bogey": 2, "double": 2,
+  "triple bogey": 3, "triple": 3,
+  "quad":    4
 };
 
-function findFirstNumber(words: string[], allowNegative = false): { value: number; index: number } | null {
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    const digit = /^-?\d+$/.test(w) ? Number(w) : null;
-    if (digit !== null && !Number.isNaN(digit)) {
-      // negative-prefix handling for spoken "minus three"
-      if (allowNegative && i > 0 && (words[i - 1] === "minus" || words[i - 1] === "negative")) {
-        return { value: -digit, index: i };
-      }
-      return { value: digit, index: i };
-    }
-    if (w in WORD_NUM) {
-      const n = WORD_NUM[w];
-      // "minus three" → -3
-      if (allowNegative && (w === "minus" || w === "negative") && i + 1 < words.length) {
-        const next = words[i + 1];
-        const nv = /^\d+$/.test(next) ? Number(next) : (next in WORD_NUM ? WORD_NUM[next] : null);
-        if (nv !== null) return { value: -Math.abs(nv), index: i + 1 };
-      }
-      if (n >= 0 && n <= 10) return { value: n, index: i };
-    }
+function normalize(s: string): string {
+  return s.toLowerCase()
+          .replace(/[^a-z0-9\s\-]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+}
+
+function parseWordOrDigitInto(tokens: string[], start = 0): { value: number; nextIndex: number } | null {
+  for (let i = start; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^\d+$/.test(t)) return { value: Number(t), nextIndex: i + 1 };
+    if (t in WORD_NUM)   return { value: WORD_NUM[t], nextIndex: i + 1 };
   }
   return null;
 }
 
-function normalize(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9\s\-]/g, " ")   // drop punctuation
-    .replace(/\s+/g, " ")
-    .trim();
+// ── Hole prefix ─────────────────────────────────────────────
+// Strip leading "hole N" / "h N" / "hole" + number-word and return the number.
+function extractHoleNumber(tokens: string[], ctx: ParseCtx): { holeNumber: number; remaining: string[] } | null {
+  if (tokens.length === 0) return null;
+  const head = tokens[0];
+  const wantHole = head === "hole" || head === "h";
+  if (!wantHole) return null;
+  // accept "hole 7" or "hole seven"
+  const got = parseWordOrDigitInto(tokens, 1);
+  if (!got) return null;
+  // Validate against the round if we have hole metadata.
+  const maxHole = ctx.holes?.length ?? 18;
+  if (got.value < 1 || got.value > maxHole) return null;
+  return { holeNumber: got.value, remaining: tokens.slice(got.nextIndex) };
 }
 
-// Speech recognizers tend to output number-word sequences as either
-// digit strings ("4133") or spaced digits ("4 1 3 3") or rarely
-// spaced number-words ("four one three three"). Collect any continuous
-// run of these into a single digit sequence — but ONLY when the whole
-// utterance is made of digit-like tokens. Anything else (birdie, olympic,
-// next, …) takes priority over positional parsing.
-function tryDigitSequence(text: string): number[] | null {
-  const tokens = text.split(" ").filter(Boolean);
+// ── Player prefix ───────────────────────────────────────────
+// Match the longest player-name prefix at the start of the tokens.
+// Player names can be multi-word; sort by length so "Big BK" beats "BK".
+function extractPlayer(tokens: string[], ctx: ParseCtx): { playerId: string; remaining: string[] } | null {
+  if (!ctx.players || ctx.players.length === 0 || tokens.length === 0) return null;
+  type Entry = { id: string; words: string[] };
+  const entries: Entry[] = ctx.players.map(p => ({
+    id: p.id,
+    words: normalize(p.name).split(" ").filter(Boolean)
+  })).filter(e => e.words.length > 0);
+  // Longest-first so multi-word names match before their substrings.
+  entries.sort((a, b) => b.words.length - a.words.length);
+  for (const e of entries) {
+    if (tokens.length < e.words.length) continue;
+    let ok = true;
+    for (let i = 0; i < e.words.length; i++) {
+      if (tokens[i] !== e.words[i]) { ok = false; break; }
+    }
+    if (ok) return { playerId: e.id, remaining: tokens.slice(e.words.length) };
+  }
+  return null;
+}
+
+// ── Positional digit sequence — "4133" / "4 1 3 3" / "four one three three" ──
+function tryDigitSequence(tokens: string[]): number[] | null {
   if (tokens.length === 0) return null;
   const digits: number[] = [];
   for (const t of tokens) {
-    if (/^\d+$/.test(t)) {
-      // "4133" → 4,1,3,3   "10" → 1,0
-      for (const c of t) digits.push(Number(c));
-    } else if (t in WORD_NUM) {
+    if (/^\d+$/.test(t)) for (const c of t) digits.push(Number(c));
+    else if (t in WORD_NUM) {
       const n = WORD_NUM[t];
-      if (n < 0 || n > 9) return null;   // "ten"/"minus"/"plus" not part of positional grammar
+      if (n < 0 || n > 9) return null;
       digits.push(n);
-    } else {
-      return null;                        // any non-numeric token disables positional mode
-    }
+    } else return null;
   }
   return digits.length > 0 ? digits : null;
 }
 
-export function parseVoice(raw: string, par: number): ParsedScore | null {
+// ── Main entry point ────────────────────────────────────────
+export function parseVoice(raw: string, ctx: ParseCtx | number): ParsedScore | null {
+  // Backwards-compat: old callers passed just `par` as a number.
+  const context: ParseCtx = typeof ctx === "number" ? { par: ctx } : ctx;
+
   const text = normalize(raw);
   if (!text) return null;
 
-  // ── Navigation commands ──────────────────────────────────────────────
-  if (/\b(next|forward)\b/.test(text) && !/(hole|par)/.test(text)) {
-    return { command: "next", summary: "Next hole" };
-  }
-  if (/\b(back|previous|prev|last)\b/.test(text) && !/(hole|par)/.test(text)) {
-    return { command: "back", summary: "Previous hole" };
+  // ── Navigation commands (whole utterance only) ──────────────
+  if (/^(next|forward)$/.test(text))                 return { command: "next", summary: "Next hole" };
+  if (/^(back|previous|prev|last)$/.test(text))      return { command: "back", summary: "Previous hole" };
+
+  // Tokenize once and walk through prefixes (hole, player) before the score body.
+  let tokens = text.split(" ").filter(Boolean);
+  const result: ParsedScore = { summary: "" };
+  const summary: string[] = [];
+
+  // Hole prefix
+  const h = extractHoleNumber(tokens, context);
+  if (h) {
+    result.hole_number = h.holeNumber;
+    summary.push(`Hole ${h.holeNumber}`);
+    tokens = h.remaining;
   }
 
-  // ── Olympic Special (must come before plain "olympic") ───────────────
-  if (/\b(special|kp|near\s*pin|nearest\s*pin)\b/.test(text)) {
-    const words = text.split(" ");
-    const found = findFirstNumber(words, true);
-    const value = found?.value ?? 1;   // "kp" alone → +1
-    return {
-      olympic_special_points: value,
-      summary: `Special ${value > 0 ? "+" : ""}${value}`
-    };
+  // Player prefix
+  const p = extractPlayer(tokens, context);
+  if (p) {
+    result.player_id = p.playerId;
+    const playerName = context.players!.find(x => x.id === p.playerId)?.name;
+    if (playerName) summary.push(playerName);
+    tokens = p.remaining;
   }
 
-  // ── Olympic ──────────────────────────────────────────────────────────
-  if (/\b(olympic|oly)\b/.test(text)) {
-    const words = text.split(" ");
-    const found = findFirstNumber(words, false);
-    const value = found?.value ?? 1;
-    return {
-      olympic_points: value,
-      summary: `Olympic ${value}`
-    };
+  // Whatever remains is the "score body" — par for stroke math comes from
+  // the targeted hole (if a hole was named) else the current par.
+  let parForBody = context.par;
+  if (result.hole_number != null && context.holes) {
+    const tgt = context.holes.find(x => x.number === result.hole_number);
+    if (tgt) parForBody = tgt.par;
   }
 
-  // ── Golf terms (birdie, par, bogey, …) ───────────────────────────────
-  // Check longer terms first so "double bogey" beats "bogey".
+  // ── Olympic Special (must precede generic "olympic" match) ──
+  const bodyText = tokens.join(" ");
+  if (/\b(special|kp|near\s*pin|nearest\s*pin)\b/.test(bodyText)) {
+    const found = parseWordOrDigitInto(tokens, 0) ||
+                  // fallback: search for any number after "minus"
+                  (() => {
+                    const minusIdx = tokens.indexOf("minus");
+                    if (minusIdx >= 0) {
+                      const n = parseWordOrDigitInto(tokens, minusIdx + 1);
+                      if (n) return { value: -Math.abs(n.value), nextIndex: n.nextIndex };
+                    }
+                    return null;
+                  })();
+    const v = found?.value ?? 1;
+    result.olympic_special_points = v;
+    summary.push(`Special ${v > 0 ? "+" : ""}${v}`);
+    return finalize(result, summary);
+  }
+
+  // ── Olympic ─────────────────────────────────────────────────
+  if (/\b(olympic|oly)\b/.test(bodyText)) {
+    const found = parseWordOrDigitInto(tokens, 0);
+    const v = found?.value ?? 1;
+    result.olympic_points = v;
+    summary.push(`Olympic ${v}`);
+    return finalize(result, summary);
+  }
+
+  // ── Golf terms (birdie, par, bogey, …) ──────────────────────
   const sortedTerms = Object.keys(TERM_OFFSET).sort((a, b) => b.length - a.length);
   for (const term of sortedTerms) {
-    if (new RegExp(`\\b${term.replace(/\s+/g, "\\s+")}\\b`).test(text)) {
-      let strokes: number;
+    const re = new RegExp(`\\b${term.replace(/\s+/g, "\\s+")}\\b`);
+    if (re.test(bodyText)) {
       const off = TERM_OFFSET[term];
-      if (off === -100) {                  // "ace" / "hole in one"
-        strokes = 1;
-      } else {
-        strokes = Math.max(1, par + off);
-      }
-      const niceTerm = term.replace(/\b\w/g, c => c.toUpperCase());
-      return { strokes, summary: `${niceTerm} · ${strokes} strokes` };
+      const strokes = off === -100 ? 1 : Math.max(1, parForBody + off);
+      result.strokes = strokes;
+      const nice = term.replace(/\b\w/g, c => c.toUpperCase());
+      summary.push(`${nice} · ${strokes}`);
+      return finalize(result, summary);
     }
   }
 
-  // ── Positional digit grammar: "4133" → str=4, oly=1, spc=3, sao=3 ────
-  // Spoken as "four one three three" or "4133" or "4 1 3 3".
-  const digits = tryDigitSequence(text);
+  // ── Positional digit grammar — "4133" → str·oly·spec·sao ────
+  const digits = tryDigitSequence(tokens);
   if (digits && digits.length > 0 && digits[0] >= 1) {
-    const result: ParsedScore = { summary: "", strokes: digits[0] };
-    const parts: string[] = [`${digits[0]} strokes`];
-    if (digits.length > 1) { result.olympic_points         = digits[1]; parts.push(`Oly ${digits[1]}`); }
-    if (digits.length > 2) { result.olympic_special_points = digits[2]; parts.push(`Spec ${digits[2]}`); }
-    if (digits.length > 3) { result.sao_points             = digits[3]; parts.push(`SAO ${digits[3]}`); }
-    result.summary = parts.join(" · ");
-    return result;
+    result.strokes                                  = digits[0];
+    summary.push(`${digits[0]} strokes`);
+    if (digits.length > 1) { result.olympic_points         = digits[1]; summary.push(`Oly ${digits[1]}`); }
+    if (digits.length > 2) { result.olympic_special_points = digits[2]; summary.push(`Spec ${digits[2]}`); }
+    if (digits.length > 3) { result.sao_points             = digits[3]; summary.push(`SAO ${digits[3]}`); }
+    return finalize(result, summary);
   }
 
-  // ── Bare number → strokes (single-digit fallback) ────────────────────
-  const words = text.split(" ");
-  const num = findFirstNumber(words, false);
+  // ── Bare single number → strokes ────────────────────────────
+  const num = parseWordOrDigitInto(tokens, 0);
   if (num && num.value >= 1 && num.value <= 12) {
-    return { strokes: num.value, summary: `${num.value} strokes` };
+    result.strokes = num.value;
+    summary.push(`${num.value} strokes`);
+    return finalize(result, summary);
   }
 
+  // No score body, but we may still have hole/player jumps to apply.
+  if (result.hole_number != null || result.player_id != null) {
+    return finalize(result, summary);
+  }
   return null;
+}
+
+function finalize(r: ParsedScore, parts: string[]): ParsedScore {
+  r.summary = parts.join(" · ");
+  return r;
 }
