@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  View, Text, StyleSheet, ScrollView, Pressable, Platform, Alert, Animated, Easing
+  View, Text, StyleSheet, ScrollView, Pressable, Platform, Alert
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -9,8 +9,8 @@ import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { useRound } from "@/lib/useRound";
 import { api } from "@/lib/api";
 import { entryButtonsFor, termFor } from "@/lib/golfTerms";
-import { createVoiceListener, type VoiceListener } from "@/lib/voice";
 import { parseVoice } from "@/lib/voiceParser";
+import { VoiceCapture } from "@/components/VoiceCapture";
 import type { Score } from "@/lib/types";
 
 const PLAYER_PICK_KEY = (code: string) => `gv:${code}:player`;
@@ -76,37 +76,7 @@ export default function ScoreEntry() {
     }
   }
 
-  // ── Voice push-to-talk ─────────────────────────────────────────────
-  const [voiceState, setVoiceState] = useState<"idle" | "listening" | "thinking">("idle");
-  const [voiceText,  setVoiceText]  = useState("");
-  const [voiceToast, setVoiceToast] = useState("");
-  const voiceRef = useRef<VoiceListener | null>(null);
-  const voiceSupportedRef = useRef<boolean | null>(null);
-  const pulse = useRef(new Animated.Value(1)).current;
-
-  // Probe support once
-  if (voiceSupportedRef.current === null) {
-    const probe = createVoiceListener({ onFinal: () => {} });
-    voiceSupportedRef.current = probe.isSupported;
-  }
-  const voiceSupported = voiceSupportedRef.current;
-
-  // Pulse animation while listening
-  useEffect(() => {
-    if (voiceState !== "listening") { pulse.setValue(1); return; }
-    const loop = Animated.loop(Animated.sequence([
-      Animated.timing(pulse, { toValue: 1.18, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(pulse, { toValue: 1,    duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
-    ]));
-    loop.start();
-    return () => loop.stop();
-  }, [voiceState, pulse]);
-
-  function showToast(msg: string) {
-    setVoiceToast(msg);
-    setTimeout(() => setVoiceToast(""), 1800);
-  }
-
+  // Voice handler is delegated to <VoiceCapture/>; we just receive the transcript.
   async function applyParse(text: string) {
     if (!hole || !round || !me) return;
     const parsed = parseVoice(text, {
@@ -116,11 +86,11 @@ export default function ScoreEntry() {
     });
     if (!parsed) {
       buzz("err");
-      showToast(`🤷  Couldn't understand "${text}"`);
+      Alert.alert("Voice", `Couldn't understand "${text}"`);
       return;
     }
-    if (parsed.command === "next") { gotoHole(holeIdx + 1); showToast("⏭  Next hole"); return; }
-    if (parsed.command === "back") { gotoHole(holeIdx - 1); showToast("⏮  Previous hole"); return; }
+    if (parsed.command === "next") { gotoHole(holeIdx + 1); return; }
+    if (parsed.command === "back") { gotoHole(holeIdx - 1); return; }
 
     // Resolve target hole + player from the parsed prefixes, falling back to current state.
     const targetHole = parsed.hole_number != null
@@ -149,9 +119,7 @@ export default function ScoreEntry() {
     }
 
     if (Object.keys(patch).length === 0) {
-      // No score data — just a hole/player jump. Still useful, confirm.
       buzz("select");
-      showToast(`→  ${parsed.summary}`);
       return;
     }
 
@@ -169,45 +137,11 @@ export default function ScoreEntry() {
       buzz("ok");
       setSavingHint("saved");
       setTimeout(() => setSavingHint(""), 900);
-      showToast(`✓  ${parsed.summary}`);
     } catch (e: any) {
       setSavingHint("");
       buzz("err");
-      showToast(`🎤  ${e?.message || "Save failed"}`);
+      Alert.alert("Voice", e?.message || "Save failed");
     }
-  }
-
-  function handleVoiceError(code: string) {
-    buzz("err");
-    if (code === "insecure-context")
-      showToast("🔒  Voice needs HTTPS. Open the Azure URL on your phone.");
-    else if (code === "no-speech")
-      showToast("🤫  Didn't catch any speech. Try again.");
-    else if (code === "not-allowed" || code === "service-not-allowed")
-      showToast("🎤  Microphone blocked. Allow it in browser settings.");
-    else if (code === "audio-capture")
-      showToast("🎤  No microphone found.");
-    else
-      showToast(`🎤  ${code}`);
-  }
-
-  function startVoice() {
-    if (!voiceSupported || voiceState === "listening") return;
-    buzz("select");
-    setVoiceText("");
-    setVoiceState("listening");
-    voiceRef.current = createVoiceListener({
-      onPartial: setVoiceText,
-      onFinal:   (text) => { setVoiceState("thinking"); applyParse(text); },
-      onError:   handleVoiceError,
-      // Always reset UI here so a stuck "Listening…" can't happen,
-      // regardless of which terminal callback fired.
-      onEnd:     ()     => { setVoiceState("idle"); setVoiceText(""); }
-    });
-    voiceRef.current.start();
-  }
-  function stopVoice() {
-    voiceRef.current?.stop();
   }
 
   if (loading) return (
@@ -254,47 +188,12 @@ export default function ScoreEntry() {
         </Pressable>
       </View>
 
-      {/* Voice — tap to start, tap again to stop (works reliably on iOS) */}
-      {voiceSupported && (
-        <View style={{ marginBottom: spacing.md }}>
-          <Pressable
-            onPress={() => voiceState === "listening" ? stopVoice() : startVoice()}
-            style={({ pressed }) => [styles.voiceBtn, {
-              backgroundColor: voiceState === "listening" ? colors.danger : colors.card,
-              borderColor:     voiceState === "listening" ? colors.danger : colors.border,
-              opacity: pressed ? 0.9 : 1
-            }]}>
-            <Animated.Text style={[styles.voiceMic, { transform: [{ scale: pulse }] }]}>
-              {voiceState === "listening" ? "⏺" : "🎤"}
-            </Animated.Text>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.voiceLabel, {
-                color: voiceState === "listening" ? "#fff" : colors.text, ...font
-              }]}>
-                {voiceState === "listening" ? "Listening — tap to stop"
-                 : voiceState === "thinking" ? "Thinking…"
-                 : "Tap to speak"}
-              </Text>
-              {voiceText ? (
-                <Text style={[styles.voiceTranscript, {
-                  color: voiceState === "listening" ? "#ffffffcc" : colors.textDim, ...font
-                }]} numberOfLines={1}>
-                  "{voiceText}"
-                </Text>
-              ) : (
-                <Text style={[styles.voiceHint, { color: colors.textMuted, ...font }]} numberOfLines={1}>
-                  e.g. "hole 1 Noo 4133"  ·  "BK birdie"  ·  "next"
-                </Text>
-              )}
-            </View>
-          </Pressable>
-          {voiceToast ? (
-            <View style={[styles.voiceToast, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.voiceToastText, { color: colors.text, ...font }]}>{voiceToast}</Text>
-            </View>
-          ) : null}
-        </View>
-      )}
+      {/* Voice capture — tap-to-toggle */}
+      <VoiceCapture
+        onApply={applyParse}
+        contextLabel={`Hole ${hole.number} · ${me.name}`}
+        hint={`e.g. "hole 1 ${me.name} 4133" or "birdie"`}
+      />
 
       {/* Hole header + prev/next */}
       <View style={[styles.holeHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -472,13 +371,5 @@ const styles = StyleSheet.create({
   saoLabel: { fontSize: 18, fontWeight: "800" },
 
   btnPrimary: { paddingVertical: spacing.md, paddingHorizontal: spacing.xl, borderRadius: radii.lg },
-  btnPrimaryText: { fontSize: 16, fontWeight: "700" },
-
-  voiceBtn:        { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radii.lg, borderWidth: 2 },
-  voiceMic:        { fontSize: 26 },
-  voiceLabel:      { fontSize: 14, fontWeight: "700" },
-  voiceTranscript: { fontSize: 13, fontStyle: "italic", marginTop: 2 },
-  voiceHint:       { fontSize: 11, marginTop: 2 },
-  voiceToast:      { marginTop: spacing.xs, padding: spacing.sm, borderRadius: radii.md, borderWidth: 1, alignItems: "center" },
-  voiceToastText:  { fontSize: 13, fontWeight: "600" }
+  btnPrimaryText: { fontSize: 16, fontWeight: "700" }
 });

@@ -1,14 +1,16 @@
 // Round home: shows the round info, list of players, and entry-points.
 // Full live dashboard arrives in Sprint 4.
-import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, Linking, Platform } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, Linking, Platform, Alert } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { useRound } from "@/lib/useRound";
 import { api } from "@/lib/api";
 import { trackRoundAccess, getAdminTokenForRound } from "@/lib/device";
-import type { Player } from "@/lib/types";
+import { parseVoice } from "@/lib/voiceParser";
+import { VoiceCapture } from "@/components/VoiceCapture";
+import type { Player, Score } from "@/lib/types";
 
 const PLAYER_PICK_KEY = (code: string) => `gv:${code}:player`;
 
@@ -16,8 +18,19 @@ export default function RoundIndex() {
   const { code: rawCode, admin } = useLocalSearchParams<{ code: string; admin?: string }>();
   const code = (rawCode || "").toUpperCase();
   const { colors } = useTheme();
-  const { round, players, holes, scores, loading, error, refresh } = useRound(code);
+  const { round, players, holes, scores, loading, error, refresh, setScore } = useRound(code);
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
+  const sortedHoles = useMemo(() => [...holes].sort((a, b) => a.number - b.number), [holes]);
+  const [currentHoleNumber, setCurrentHoleNumber] = useState<number>(1);
+
+  // When holes load, default to the first hole that doesn't yet have any score for the active player.
+  // Falls back to hole 1.
+  useEffect(() => {
+    if (sortedHoles.length === 0 || !activePlayerId) return;
+    const firstOpen = sortedHoles.find(h =>
+      !scores.some(s => s.hole_id === h.id && s.player_id === activePlayerId && s.strokes != null));
+    setCurrentHoleNumber(firstOpen?.number ?? sortedHoles[0].number);
+  }, [activePlayerId, sortedHoles, scores]);
 
   // Restore the player picked on this device for this round
   useEffect(() => { (async () => {
@@ -29,6 +42,68 @@ export default function RoundIndex() {
     setActivePlayerId(p.id);
     await AsyncStorage.setItem(PLAYER_PICK_KEY(code), p.id);
     if (round) await trackRoundAccess({ round_id: round.id, player_id: p.id });
+  }
+
+  // ── Voice on round home ────────────────────────────────────────────
+  // Operates on currentHoleNumber + activePlayerId, but voice can override both
+  // (e.g. "hole 5 Noo 4133" jumps + switches + scores in one breath).
+  async function applyVoice(text: string) {
+    if (!round || sortedHoles.length === 0) return;
+    const currentHole = sortedHoles.find(h => h.number === currentHoleNumber) ?? sortedHoles[0];
+
+    const parsed = parseVoice(text, {
+      par: currentHole.par,
+      players: players.map(p => ({ id: p.id, name: p.name })),
+      holes:   sortedHoles.map(h => ({ id: h.id, number: h.number, par: h.par }))
+    });
+    if (!parsed) {
+      Alert.alert("Voice", `Couldn't understand "${text}"`);
+      return;
+    }
+    if (parsed.command === "next") { setCurrentHoleNumber(n => Math.min(sortedHoles.length, n + 1)); return; }
+    if (parsed.command === "back") { setCurrentHoleNumber(n => Math.max(1, n - 1)); return; }
+
+    const targetHole = parsed.hole_number != null
+      ? sortedHoles.find(h => h.number === parsed.hole_number) ?? currentHole
+      : currentHole;
+    const targetPlayer = parsed.player_id
+      ? players.find(p => p.id === parsed.player_id) ?? players.find(p => p.id === activePlayerId)
+      : players.find(p => p.id === activePlayerId);
+    if (!targetPlayer) {
+      Alert.alert("Voice", "Pick a player first, or say their name (e.g. \"Noo 4133\").");
+      return;
+    }
+
+    const patch: Partial<Pick<Score, "strokes" | "olympic_points" | "olympic_special_points" | "sao_points">> = {};
+    if (parsed.strokes != null)                patch.strokes = parsed.strokes;
+    if (parsed.olympic_points != null)         patch.olympic_points = parsed.olympic_points;
+    if (parsed.olympic_special_points != null) patch.olympic_special_points = parsed.olympic_special_points;
+    if (parsed.sao_points != null)             patch.sao_points = parsed.sao_points;
+
+    // Mirror the voice in the UI so the user sees what was applied.
+    setCurrentHoleNumber(targetHole.number);
+    if (parsed.player_id && parsed.player_id !== activePlayerId) {
+      setActivePlayerId(targetPlayer.id);
+      await AsyncStorage.setItem(PLAYER_PICK_KEY(code), targetPlayer.id);
+    }
+    if (Object.keys(patch).length === 0) return;   // just hole/player jump, no save needed
+
+    try {
+      const updated = await api.upsertScore({
+        round_id: round.id,
+        hole_id:  targetHole.id,
+        player_id: targetPlayer.id,
+        updated_by: "self",
+        ...patch
+      });
+      setScore(updated);
+      // Auto-advance to next hole when strokes were recorded (so consecutive utterances flow).
+      if (parsed.strokes != null && parsed.hole_number == null) {
+        setCurrentHoleNumber(n => Math.min(sortedHoles.length, n + 1));
+      }
+    } catch (e: any) {
+      Alert.alert("Voice", e?.message || "Save failed");
+    }
   }
 
   if (loading) return (
@@ -78,6 +153,17 @@ export default function RoundIndex() {
               style={[styles.bigCta, { backgroundColor: colors.accent }]}>
               <Text style={[styles.bigCtaText, { color: colors.accentText, ...font }]}>✏️  Enter scores for {me.name}</Text>
             </Pressable>
+          )}
+
+          {/* Voice batch entry — works for any player on any hole */}
+          {players.length > 0 && sortedHoles.length > 0 && (
+            <View style={{ marginTop: spacing.md }}>
+              <VoiceCapture
+                onApply={applyVoice}
+                contextLabel={`Hole ${currentHoleNumber}${me ? ` · ${me.name}` : ""}`}
+                hint={'e.g. "hole 1 ' + (me?.name || "Noo") + ' 4133"'}
+              />
+            </View>
           )}
 
           <Pressable
