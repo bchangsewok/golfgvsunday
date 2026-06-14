@@ -118,10 +118,11 @@ export default function ScoreEntry() {
     if (parsed.command === "next") { gotoHole(holeIdx + 1); showToast("⏭  Next hole"); return; }
     if (parsed.command === "back") { gotoHole(holeIdx - 1); showToast("⏮  Previous hole"); return; }
 
-    const patch: Partial<Pick<Score, "strokes" | "olympic_points" | "olympic_special_points">> = {};
+    const patch: Partial<Pick<Score, "strokes" | "olympic_points" | "olympic_special_points" | "sao_points">> = {};
     if (parsed.strokes != null)                patch.strokes = parsed.strokes;
     if (parsed.olympic_points != null)         patch.olympic_points = parsed.olympic_points;
     if (parsed.olympic_special_points != null) patch.olympic_special_points = parsed.olympic_special_points;
+    if (parsed.sao_points != null)             patch.sao_points = parsed.sao_points;
     if (Object.keys(patch).length === 0) {
       buzz("err");
       showToast(`🤷  "${text}"`);
@@ -238,7 +239,7 @@ export default function ScoreEntry() {
                 </Text>
               ) : (
                 <Text style={[styles.voiceHint, { color: colors.textMuted, ...font }]} numberOfLines={1}>
-                  e.g. "four", "birdie", "olympic 2", "next"
+                  e.g. "4133" = str·oly·spec·sao  ·  "birdie"  ·  "next"
                 </Text>
               )}
             </View>

@@ -13,6 +13,7 @@ export type ParsedScore = {
   strokes?:                 number;
   olympic_points?:          number;
   olympic_special_points?:  number;
+  sao_points?:              number;
   command?:                 "next" | "back";
   // Human-readable summary for toast/feedback. Always set when result is non-null.
   summary:                  string;
@@ -74,6 +75,31 @@ function normalize(s: string): string {
     .trim();
 }
 
+// Speech recognizers tend to output number-word sequences as either
+// digit strings ("4133") or spaced digits ("4 1 3 3") or rarely
+// spaced number-words ("four one three three"). Collect any continuous
+// run of these into a single digit sequence — but ONLY when the whole
+// utterance is made of digit-like tokens. Anything else (birdie, olympic,
+// next, …) takes priority over positional parsing.
+function tryDigitSequence(text: string): number[] | null {
+  const tokens = text.split(" ").filter(Boolean);
+  if (tokens.length === 0) return null;
+  const digits: number[] = [];
+  for (const t of tokens) {
+    if (/^\d+$/.test(t)) {
+      // "4133" → 4,1,3,3   "10" → 1,0
+      for (const c of t) digits.push(Number(c));
+    } else if (t in WORD_NUM) {
+      const n = WORD_NUM[t];
+      if (n < 0 || n > 9) return null;   // "ten"/"minus"/"plus" not part of positional grammar
+      digits.push(n);
+    } else {
+      return null;                        // any non-numeric token disables positional mode
+    }
+  }
+  return digits.length > 0 ? digits : null;
+}
+
 export function parseVoice(raw: string, par: number): ParsedScore | null {
   const text = normalize(raw);
   if (!text) return null;
@@ -125,7 +151,20 @@ export function parseVoice(raw: string, par: number): ParsedScore | null {
     }
   }
 
-  // ── Bare number → strokes ────────────────────────────────────────────
+  // ── Positional digit grammar: "4133" → str=4, oly=1, spc=3, sao=3 ────
+  // Spoken as "four one three three" or "4133" or "4 1 3 3".
+  const digits = tryDigitSequence(text);
+  if (digits && digits.length > 0 && digits[0] >= 1) {
+    const result: ParsedScore = { summary: "", strokes: digits[0] };
+    const parts: string[] = [`${digits[0]} strokes`];
+    if (digits.length > 1) { result.olympic_points         = digits[1]; parts.push(`Oly ${digits[1]}`); }
+    if (digits.length > 2) { result.olympic_special_points = digits[2]; parts.push(`Spec ${digits[2]}`); }
+    if (digits.length > 3) { result.sao_points             = digits[3]; parts.push(`SAO ${digits[3]}`); }
+    result.summary = parts.join(" · ");
+    return result;
+  }
+
+  // ── Bare number → strokes (single-digit fallback) ────────────────────
   const words = text.split(" ");
   const num = findFirstNumber(words, false);
   if (num && num.value >= 1 && num.value <= 12) {
