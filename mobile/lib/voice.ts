@@ -63,6 +63,7 @@ export function createVoiceListener(opts: VoiceOpts): VoiceListener {
     ended    = false;
     lastText = "";
     rec      = new SR();
+    // Default English; callers can pass "th-TH" for Thai
     rec.lang            = opts.lang ?? "en-US";
     rec.continuous      = false;
     rec.interimResults  = true;

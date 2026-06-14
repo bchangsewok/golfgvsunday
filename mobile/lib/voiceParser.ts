@@ -36,11 +36,21 @@ export type ParsedScore = {
 
 // ───────────────────────── lexicons ─────────────────────────
 const WORD_NUM: Record<string, number> = {
+  // English
   zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
   six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
-  minus: -1, negative: -1, plus: 1, positive: 1
+  minus: -1, negative: -1, plus: 1, positive: 1,
+  // Thai (romanized + native script)
+  "ศูนย์": 0, "หนึ่ง": 1, "สอง": 2, "สาม": 3, "สี่": 4, "ห้า": 5,
+  "หก":   6, "เจ็ด":  7, "แปด":  8, "เก้า": 9, "สิบ":   10,
+  // Common romanizations spoken aloud / mis-heard by EN engine
+  "nung": 1, "song": 2, "sam": 3, "see": 4, "ha": 5,
+  "hok":  6, "jed":  7, "paet": 8, "kao": 9, "sip": 10,
+  // Thai negative / positive markers
+  "ลบ": -1, "บวก": 1
 };
 const TERM_OFFSET: Record<string, number> = {
+  // English
   "hole in one": -100, "ace": -100,
   "albatross": -3, "double eagle": -3,
   "eagle": -2,
@@ -49,14 +59,30 @@ const TERM_OFFSET: Record<string, number> = {
   "bogey":   1,
   "double bogey": 2, "double": 2,
   "triple bogey": 3, "triple": 3,
-  "quad":    4
+  "quad":    4,
+  // Thai equivalents (commonly used)
+  "อีเกิ้ล": -2, "อีเกิล": -2,
+  "เบอร์ดี้": -1, "เบอร์ดี": -1, "เบิร์ดดี้": -1,
+  "พาร์": 0, "พา": 0,
+  "โบกี้": 1, "โบกี": 1,
+  "ดับเบิ้ลโบกี้": 2, "ดับเบิ้ล": 2,
+  "ทริปเปิ้ล": 3
+};
+
+// Thai numeral digits → Arabic
+const THAI_DIGITS: Record<string, string> = {
+  "๐": "0", "๑": "1", "๒": "2", "๓": "3", "๔": "4",
+  "๕": "5", "๖": "6", "๗": "7", "๘": "8", "๙": "9"
 };
 
 function normalize(s: string): string {
-  return s.toLowerCase()
-          .replace(/[^a-z0-9\s\-]/g, " ")
-          .replace(/\s+/g, " ")
-          .trim();
+  // Convert Thai digits to Arabic, then strip punctuation but keep Thai letters.
+  let out = "";
+  for (const c of s) out += THAI_DIGITS[c] ?? c;
+  return out.toLowerCase()
+            .replace(/[^a-z0-9฀-๿\s\-]/g, " ")    // keep Thai Unicode block
+            .replace(/\s+/g, " ")
+            .trim();
 }
 
 function parseWordOrDigitInto(tokens: string[], start = 0): { value: number; nextIndex: number } | null {
@@ -69,16 +95,28 @@ function parseWordOrDigitInto(tokens: string[], start = 0): { value: number; nex
 }
 
 // ── Hole prefix ─────────────────────────────────────────────
-// Strip leading "hole N" / "h N" / "hole" + number-word and return the number.
+// Strip leading "hole N" / "h N" / "หลุม N" and return the number.
+// In Thai script "หลุม" may be merged with the number (e.g. "หลุม7" or "หลุม๗")
+// so we also accept that form.
 function extractHoleNumber(tokens: string[], ctx: ParseCtx): { holeNumber: number; remaining: string[] } | null {
   if (tokens.length === 0) return null;
   const head = tokens[0];
-  const wantHole = head === "hole" || head === "h";
-  if (!wantHole) return null;
-  // accept "hole 7" or "hole seven"
+  const HOLE_WORDS = new Set(["hole", "h", "หลุม"]);
+  const isHole = HOLE_WORDS.has(head);
+
+  // Merged form "หลุม7" or "hole7"
+  if (!isHole) {
+    const m = head.match(/^(หลุม|hole)(\d+)$/);
+    if (m) {
+      const n = Number(m[2]);
+      const maxHole = ctx.holes?.length ?? 18;
+      if (n >= 1 && n <= maxHole) return { holeNumber: n, remaining: tokens.slice(1) };
+    }
+    return null;
+  }
+
   const got = parseWordOrDigitInto(tokens, 1);
   if (!got) return null;
-  // Validate against the round if we have hole metadata.
   const maxHole = ctx.holes?.length ?? 18;
   if (got.value < 1 || got.value > maxHole) return null;
   return { holeNumber: got.value, remaining: tokens.slice(got.nextIndex) };
@@ -131,8 +169,8 @@ export function parseVoice(raw: string, ctx: ParseCtx | number): ParsedScore | n
   if (!text) return null;
 
   // ── Navigation commands (whole utterance only) ──────────────
-  if (/^(next|forward)$/.test(text))                 return { command: "next", summary: "Next hole" };
-  if (/^(back|previous|prev|last)$/.test(text))      return { command: "back", summary: "Previous hole" };
+  if (/^(next|forward|ถัดไป|ต่อไป)$/.test(text))           return { command: "next", summary: "Next hole" };
+  if (/^(back|previous|prev|last|ก่อนหน้า|ย้อนกลับ)$/.test(text)) return { command: "back", summary: "Previous hole" };
 
   // Tokenize once and walk through prefixes (hole, player) before the score body.
   let tokens = text.split(" ").filter(Boolean);
@@ -166,7 +204,7 @@ export function parseVoice(raw: string, ctx: ParseCtx | number): ParsedScore | n
 
   // ── Olympic Special (must precede generic "olympic" match) ──
   const bodyText = tokens.join(" ");
-  if (/\b(special|kp|near\s*pin|nearest\s*pin)\b/.test(bodyText)) {
+  if (/(\bspecial\b|\bkp\b|near\s*pin|nearest\s*pin|พิเศษ|เข้าหลุม)/.test(bodyText)) {
     const found = parseWordOrDigitInto(tokens, 0) ||
                   // fallback: search for any number after "minus"
                   (() => {
@@ -184,7 +222,7 @@ export function parseVoice(raw: string, ctx: ParseCtx | number): ParsedScore | n
   }
 
   // ── Olympic ─────────────────────────────────────────────────
-  if (/\b(olympic|oly)\b/.test(bodyText)) {
+  if (/(\bolympic\b|\boly\b|โอลิม|โอลิมปิก)/.test(bodyText)) {
     const found = parseWordOrDigitInto(tokens, 0);
     const v = found?.value ?? 1;
     result.olympic_points = v;

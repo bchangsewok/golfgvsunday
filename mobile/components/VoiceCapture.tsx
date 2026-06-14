@@ -4,8 +4,12 @@
 // This component owns: UI states, animations, error toasts, mic lifecycle.
 import { useEffect, useRef, useState } from "react";
 import { View, Text, StyleSheet, Pressable, Animated, Easing } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { createVoiceListener, type VoiceListener } from "@/lib/voice";
+
+const LANG_KEY = "gv:voice_lang";
+export type VoiceLang = "en-US" | "th-TH";
 
 type Props = {
   /** Receives the final transcript when the user releases or recognition ends. */
@@ -21,9 +25,22 @@ export function VoiceCapture({ onApply, hint, contextLabel }: Props) {
   const [state, setState] = useState<"idle" | "listening" | "thinking">("idle");
   const [text,  setText]  = useState("");
   const [toast, setToast] = useState("");
+  const [lang,  setLang]  = useState<VoiceLang>("en-US");
   const ref = useRef<VoiceListener | null>(null);
   const supportedRef = useRef<boolean | null>(null);
   const pulse = useRef(new Animated.Value(1)).current;
+
+  // Restore preferred language on mount
+  useEffect(() => {
+    AsyncStorage.getItem(LANG_KEY).then(v => {
+      if (v === "en-US" || v === "th-TH") setLang(v);
+    });
+  }, []);
+  async function toggleLang() {
+    const next: VoiceLang = lang === "en-US" ? "th-TH" : "en-US";
+    setLang(next);
+    await AsyncStorage.setItem(LANG_KEY, next);
+  }
 
   if (supportedRef.current === null) {
     const probe = createVoiceListener({ onFinal: () => {} });
@@ -64,6 +81,7 @@ export function VoiceCapture({ onApply, hint, contextLabel }: Props) {
     setText("");
     setState("listening");
     ref.current = createVoiceListener({
+      lang,
       onPartial: setText,
       onFinal:   async (t) => { setState("thinking"); try { await onApply(t); } finally { /* state cleared by onEnd */ } },
       onError:   handleError,
@@ -89,9 +107,9 @@ export function VoiceCapture({ onApply, hint, contextLabel }: Props) {
         </Animated.Text>
         <View style={{ flex: 1 }}>
           <Text style={[styles.label, { color: state === "listening" ? "#fff" : colors.text, ...font }]}>
-            {state === "listening" ? "Listening — tap to stop"
-             : state === "thinking" ? "Thinking…"
-             : "Tap to speak"}
+            {state === "listening" ? (lang === "th-TH" ? "กำลังฟัง — แตะเพื่อหยุด" : "Listening — tap to stop")
+             : state === "thinking" ? (lang === "th-TH" ? "กำลังประมวลผล…" : "Thinking…")
+             : (lang === "th-TH" ? "แตะเพื่อพูด" : "Tap to speak")}
           </Text>
           {text ? (
             <Text style={[styles.transcript, { color: state === "listening" ? "#ffffffcc" : colors.textDim, ...font }]} numberOfLines={1}>
@@ -103,6 +121,17 @@ export function VoiceCapture({ onApply, hint, contextLabel }: Props) {
             </Text>
           )}
         </View>
+        <Pressable
+          onPress={(e: any) => { e?.stopPropagation?.(); toggleLang(); }}
+          hitSlop={8}
+          style={[styles.langChip, {
+            backgroundColor: state === "listening" ? "#ffffff22" : colors.bg,
+            borderColor: state === "listening" ? "#ffffff44" : colors.border
+          }]}>
+          <Text style={[styles.langChipText, {
+            color: state === "listening" ? "#fff" : colors.text, ...font
+          }]}>{lang === "en-US" ? "EN" : "TH"}</Text>
+        </Pressable>
       </Pressable>
       {toast ? (
         <View style={[styles.toast, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -125,5 +154,7 @@ const styles = StyleSheet.create({
   transcript:{ fontSize: 13, fontStyle: "italic", marginTop: 2 },
   hint:      { fontSize: 11, marginTop: 2 },
   toast:     { marginTop: spacing.xs, padding: spacing.sm, borderRadius: radii.md, borderWidth: 1, alignItems: "center" },
-  toastText: { fontSize: 13, fontWeight: "600" }
+  toastText: { fontSize: 13, fontWeight: "600" },
+  langChip:  { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radii.pill, borderWidth: 1, minWidth: 36, alignItems: "center" },
+  langChipText: { fontSize: 11, fontWeight: "800", letterSpacing: 1 }
 });

@@ -9,6 +9,8 @@ import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { useRound } from "@/lib/useRound";
 import { api } from "@/lib/api";
 import { entryButtonsFor, termFor } from "@/lib/golfTerms";
+import { parseVoice } from "@/lib/voiceParser";
+import { VoiceCapture } from "@/components/VoiceCapture";
 import type { Score } from "@/lib/types";
 
 const PLAYER_PICK_KEY = (code: string) => `gv:${code}:player`;
@@ -74,6 +76,62 @@ export default function ScoreEntry() {
     }
   }
 
+  // Voice on score-entry: defaults to current hole + active player, but voice
+  // can override either (e.g. "hole 5 BK 4133" jumps + switches + saves).
+  async function applyVoice(text: string) {
+    if (!hole || !round || !me) return;
+    const parsed = parseVoice(text, {
+      par: hole.par,
+      players: players.map(p => ({ id: p.id, name: p.name })),
+      holes:   sortedHoles.map(h => ({ id: h.id, number: h.number, par: h.par }))
+    });
+    if (!parsed) { buzz("err"); Alert.alert("Voice", `Couldn't understand "${text}"`); return; }
+    if (parsed.command === "next") { gotoHole(holeIdx + 1); return; }
+    if (parsed.command === "back") { gotoHole(holeIdx - 1); return; }
+
+    const targetHole = parsed.hole_number != null
+      ? sortedHoles.find(h => h.number === parsed.hole_number) ?? hole
+      : hole;
+    const targetPlayer = parsed.player_id
+      ? players.find(p => p.id === parsed.player_id) ?? me
+      : me;
+
+    const patch: Partial<Pick<Score, "strokes" | "olympic_points" | "olympic_special_points" | "sao_points">> = {};
+    if (parsed.strokes != null)                patch.strokes = parsed.strokes;
+    if (parsed.olympic_points != null)         patch.olympic_points = parsed.olympic_points;
+    if (parsed.olympic_special_points != null) patch.olympic_special_points = parsed.olympic_special_points;
+    if (parsed.sao_points != null)             patch.sao_points = parsed.sao_points;
+
+    if (targetHole.id !== hole.id) {
+      const idx = sortedHoles.findIndex(h => h.id === targetHole.id);
+      if (idx >= 0) setHoleIdx(idx);
+    }
+    if (targetPlayer.id !== me.id) {
+      setActivePlayerId(targetPlayer.id);
+      await AsyncStorage.setItem(PLAYER_PICK_KEY(code), targetPlayer.id);
+    }
+    if (Object.keys(patch).length === 0) return;
+
+    setSavingHint("saving");
+    try {
+      const updated = await api.upsertScore({
+        round_id: round.id,
+        hole_id:  targetHole.id,
+        player_id: targetPlayer.id,
+        updated_by: "self",
+        ...patch
+      });
+      setScore(updated);
+      buzz("ok");
+      setSavingHint("saved");
+      setTimeout(() => setSavingHint(""), 900);
+    } catch (e: any) {
+      setSavingHint("");
+      buzz("err");
+      Alert.alert("Voice", e?.message || "Save failed");
+    }
+  }
+
 
   if (loading) return (
     <View style={[styles.center, { backgroundColor: colors.bg }]}>
@@ -118,6 +176,13 @@ export default function ScoreEntry() {
           <Text style={{ color: colors.accent, fontWeight: "700", ...font }}>Switch</Text>
         </Pressable>
       </View>
+
+      {/* Voice capture for this player */}
+      <VoiceCapture
+        onApply={applyVoice}
+        contextLabel={`Hole ${hole.number} · ${me.name}`}
+        hint={`"4133"  ·  "birdie"  ·  "${me.name} 4133"`}
+      />
 
       {/* Hole header + prev/next */}
       <View style={[styles.holeHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
