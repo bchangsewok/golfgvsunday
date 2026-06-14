@@ -209,27 +209,26 @@ export default function ScoreEntry() {
         </Pressable>
       </View>
 
-      {/* Voice push-to-talk (web build only) */}
+      {/* Voice — tap to start, tap again to stop (works reliably on iOS) */}
       {voiceSupported && (
         <View style={{ marginBottom: spacing.md }}>
           <Pressable
-            onPressIn={startVoice}
-            onPressOut={stopVoice}
+            onPress={() => voiceState === "listening" ? stopVoice() : startVoice()}
             style={({ pressed }) => [styles.voiceBtn, {
               backgroundColor: voiceState === "listening" ? colors.danger : colors.card,
               borderColor:     voiceState === "listening" ? colors.danger : colors.border,
               opacity: pressed ? 0.9 : 1
             }]}>
             <Animated.Text style={[styles.voiceMic, { transform: [{ scale: pulse }] }]}>
-              🎤
+              {voiceState === "listening" ? "⏺" : "🎤"}
             </Animated.Text>
             <View style={{ flex: 1 }}>
               <Text style={[styles.voiceLabel, {
                 color: voiceState === "listening" ? "#fff" : colors.text, ...font
               }]}>
-                {voiceState === "listening" ? "Listening — release to commit"
+                {voiceState === "listening" ? "Listening — tap to stop"
                  : voiceState === "thinking" ? "Thinking…"
-                 : "Hold to speak"}
+                 : "Tap to speak"}
               </Text>
               {voiceText ? (
                 <Text style={[styles.voiceTranscript, {
