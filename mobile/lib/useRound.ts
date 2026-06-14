@@ -42,5 +42,10 @@ export function useRound(code: string) {
     });
   }
 
-  return { ...data, loading, error, refresh, setScore };
+  // Optimistic update of a single hole (used for multiplier edits)
+  function setHole(updated: Hole) {
+    setData(d => ({ ...d, holes: d.holes.map(h => h.id === updated.id ? { ...h, ...updated } : h) }));
+  }
+
+  return { ...data, loading, error, refresh, setScore, setHole };
 }

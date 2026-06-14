@@ -1,14 +1,14 @@
 // Round home: shows the round info, list of players, and entry-points.
 // Full live dashboard arrives in Sprint 4.
-import { useEffect, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, Linking, Platform } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { View, Text, StyleSheet, FlatList, Pressable, RefreshControl, Linking, Platform, ScrollView, Alert } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { useRound } from "@/lib/useRound";
 import { api } from "@/lib/api";
 import { trackRoundAccess, getAdminTokenForRound } from "@/lib/device";
-import type { Player } from "@/lib/types";
+import type { Player, Hole } from "@/lib/types";
 
 const PLAYER_PICK_KEY = (code: string) => `gv:${code}:player`;
 
@@ -16,8 +16,32 @@ export default function RoundIndex() {
   const { code: rawCode, admin } = useLocalSearchParams<{ code: string; admin?: string }>();
   const code = (rawCode || "").toUpperCase();
   const { colors } = useTheme();
-  const { round, players, holes, scores, loading, error, refresh } = useRound(code);
+  const { round, players, holes, scores, loading, error, refresh, setHole } = useRound(code);
   const [activePlayerId, setActivePlayerId] = useState<string | null>(null);
+
+  // Admin status — drives the hole-multiplier panel
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => { (async () => {
+    if (admin) { setIsAdmin(true); return; }
+    if (round?.id) setIsAdmin(!!(await getAdminTokenForRound(round.id)));
+  })(); }, [admin, round?.id]);
+
+  const sortedHoles = useMemo(() => [...holes].sort((a, b) => a.number - b.number), [holes]);
+  const [multSavingId, setMultSavingId] = useState<string | null>(null);
+
+  // Cycle through {1, 2, 3, 4} on tap
+  async function cycleMultiplier(h: Hole) {
+    const next = h.multiplier >= 4 ? 1 : h.multiplier + 1;
+    setMultSavingId(h.id);
+    try {
+      const updated = await api.patchHole(h.id, { multiplier: next });
+      setHole(updated);
+    } catch (e: any) {
+      Alert.alert("Hole", e?.message || "Couldn't update multiplier");
+    } finally {
+      setMultSavingId(null);
+    }
+  }
 
   // Restore the player picked on this device for this round
   useEffect(() => { (async () => {
@@ -97,6 +121,40 @@ export default function RoundIndex() {
             <Text style={[styles.btnGhostText, { color: colors.textDim, ...font }]}>📊  Open live dashboard (web)</Text>
           </Pressable>
 
+          {/* Admin: per-hole multiplier strip. Tap a hole to cycle 1 → 2 → 3 → 4. */}
+          {isAdmin && sortedHoles.length > 0 && (
+            <View style={{ marginTop: spacing.lg }}>
+              <Text style={[styles.section, { color: colors.textDim, marginTop: 0, ...font }]}>
+                🎯  HOLE MULTIPLIERS  ·  TAP TO CYCLE
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: spacing.xs, paddingVertical: 4 }}>
+                {sortedHoles.map(h => {
+                  const active = h.multiplier > 1;
+                  const saving = multSavingId === h.id;
+                  const tone = h.multiplier >= 4 ? colors.danger
+                             : h.multiplier === 3 ? colors.warning
+                             : h.multiplier === 2 ? colors.accent
+                             : colors.textMuted;
+                  return (
+                    <Pressable key={h.id} onPress={() => cycleMultiplier(h)} disabled={saving}
+                      style={({ pressed }) => [styles.multCell, {
+                        backgroundColor: active ? `${tone}22` : colors.card,
+                        borderColor:     active ? tone : colors.border,
+                        opacity: saving ? 0.4 : pressed ? 0.7 : 1
+                      }]}>
+                      <Text style={[styles.multHole, { color: colors.textDim, ...font }]}>H{h.number}</Text>
+                      <Text style={[styles.multValue, { color: active ? tone : colors.text, ...font }]}>
+                        ×{h.multiplier}
+                      </Text>
+                      <Text style={[styles.multPar, { color: colors.textMuted, ...font }]}>par {h.par}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
           <Text style={[styles.section, { color: colors.textDim, ...font }]}>
             {me ? "PLAYERS · TAP TO SWITCH" : "WHO ARE YOU? · PICK YOUR PLAYER"}
           </Text>
@@ -161,5 +219,10 @@ const styles = StyleSheet.create({
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   playerName: { fontSize: 15, fontWeight: "600" },
   playerMeta: { fontSize: 12, marginTop: 2 },
-  isMeBadge: { fontSize: 10, fontWeight: "800", letterSpacing: 1.4 }
+  isMeBadge: { fontSize: 10, fontWeight: "800", letterSpacing: 1.4 },
+
+  multCell:  { minWidth: 58, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm, borderRadius: radii.md, borderWidth: 2, alignItems: "center" },
+  multHole:  { fontSize: 10, fontWeight: "700", letterSpacing: 1 },
+  multValue: { fontSize: 18, fontWeight: "800", marginTop: 1 },
+  multPar:   { fontSize: 9, marginTop: 1 }
 });
