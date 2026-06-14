@@ -9,8 +9,6 @@ import { useTheme, spacing, radii, font } from "@/lib/theme";
 import { useRound } from "@/lib/useRound";
 import { api } from "@/lib/api";
 import { entryButtonsFor, termFor } from "@/lib/golfTerms";
-import { parseVoice } from "@/lib/voiceParser";
-import { VoiceCapture } from "@/components/VoiceCapture";
 import type { Score } from "@/lib/types";
 
 const PLAYER_PICK_KEY = (code: string) => `gv:${code}:player`;
@@ -76,73 +74,6 @@ export default function ScoreEntry() {
     }
   }
 
-  // Voice handler is delegated to <VoiceCapture/>; we just receive the transcript.
-  async function applyParse(text: string) {
-    if (!hole || !round || !me) return;
-    const parsed = parseVoice(text, {
-      par: hole.par,
-      players: players.map(p => ({ id: p.id, name: p.name })),
-      holes:   sortedHoles.map(h => ({ id: h.id, number: h.number, par: h.par }))
-    });
-    if (!parsed) {
-      buzz("err");
-      Alert.alert("Voice", `Couldn't understand "${text}"`);
-      return;
-    }
-    if (parsed.command === "next") { gotoHole(holeIdx + 1); return; }
-    if (parsed.command === "back") { gotoHole(holeIdx - 1); return; }
-
-    // Resolve target hole + player from the parsed prefixes, falling back to current state.
-    const targetHole = parsed.hole_number != null
-      ? sortedHoles.find(h => h.number === parsed.hole_number) ?? hole
-      : hole;
-    const targetPlayer = parsed.player_id
-      ? players.find(p => p.id === parsed.player_id) ?? me
-      : me;
-
-    const patch: Partial<Pick<Score, "strokes" | "olympic_points" | "olympic_special_points" | "sao_points">> = {};
-    if (parsed.strokes != null)                patch.strokes = parsed.strokes;
-    if (parsed.olympic_points != null)         patch.olympic_points = parsed.olympic_points;
-    if (parsed.olympic_special_points != null) patch.olympic_special_points = parsed.olympic_special_points;
-    if (parsed.sao_points != null)             patch.sao_points = parsed.sao_points;
-
-    // Move UI to the targeted hole/player so the user sees the result immediately.
-    const movedHole   = targetHole.id   !== hole.id;
-    const movedPlayer = targetPlayer.id !== me.id;
-    if (movedHole) {
-      const idx = sortedHoles.findIndex(h => h.id === targetHole.id);
-      if (idx >= 0) setHoleIdx(idx);
-    }
-    if (movedPlayer) {
-      setActivePlayerId(targetPlayer.id);
-      await AsyncStorage.setItem(PLAYER_PICK_KEY(code), targetPlayer.id);
-    }
-
-    if (Object.keys(patch).length === 0) {
-      buzz("select");
-      return;
-    }
-
-    // Save against the EXPLICIT target IDs (don't depend on React state catching up).
-    setSavingHint("saving");
-    try {
-      const updated = await api.upsertScore({
-        round_id: round.id,
-        hole_id:  targetHole.id,
-        player_id: targetPlayer.id,
-        updated_by: "self",
-        ...patch
-      });
-      setScore(updated);
-      buzz("ok");
-      setSavingHint("saved");
-      setTimeout(() => setSavingHint(""), 900);
-    } catch (e: any) {
-      setSavingHint("");
-      buzz("err");
-      Alert.alert("Voice", e?.message || "Save failed");
-    }
-  }
 
   if (loading) return (
     <View style={[styles.center, { backgroundColor: colors.bg }]}>
@@ -187,13 +118,6 @@ export default function ScoreEntry() {
           <Text style={{ color: colors.accent, fontWeight: "700", ...font }}>Switch</Text>
         </Pressable>
       </View>
-
-      {/* Voice capture — tap-to-toggle */}
-      <VoiceCapture
-        onApply={applyParse}
-        contextLabel={`Hole ${hole.number} · ${me.name}`}
-        hint={`e.g. "hole 1 ${me.name} 4133" or "birdie"`}
-      />
 
       {/* Hole header + prev/next */}
       <View style={[styles.holeHeader, { backgroundColor: colors.card, borderColor: colors.border }]}>
